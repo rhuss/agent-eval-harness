@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""Prepare an isolated workspace for skill evaluation.
+
+Reads eval.yaml for dataset path and output directories.
+For each case, includes the full input file content in batch.yaml —
+no field extraction or schema interpretation.
+
+Usage:
+    python3 ${CLAUDE_SKILL_DIR}/scripts/workspace.py \\
+        --config eval.yaml \\
+        --run-id test-001 \\
+        [--case-filter case-001] \\
+        [--symlinks scripts,.claude,CLAUDE.md]
+"""
+
+import argparse
+import re
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+import yaml
+
+from agent_eval.config import EvalConfig
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--config", default="eval.yaml")
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--case-filter", nargs="*", default=None)
+    parser.add_argument("--symlinks", default=None,
+                        help="Comma-separated dirs/files to symlink into workspace "
+                             "(default: scripts,.claude,CLAUDE.md,.context,skills)")
+    args = parser.parse_args()
+
+    config = EvalConfig.from_yaml(args.config)
+
+    cases_dir = Path(config.dataset_path)
+    if not cases_dir.exists():
+        print(f"ERROR: dataset path not found: {cases_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    # Find cases (each subdirectory is a case)
+    case_dirs = sorted(d for d in cases_dir.iterdir() if d.is_dir())
+    if args.case_filter:
+        case_dirs = [c for c in case_dirs
+                     if any(f in c.name for f in args.case_filter)]
+
+    if not case_dirs:
+        print("ERROR: no cases found", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate run-id
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", args.run_id):
+        print("ERROR: run-id must match [A-Za-z0-9._-]+", file=sys.stderr)
+        sys.exit(1)
+
+    # Create workspace in secure temp directory
+    base_dir = (Path(tempfile.gettempdir()) / "agent-eval").resolve()
+    workspace = (base_dir / args.run_id).resolve()
+    if base_dir not in workspace.parents and workspace != base_dir:
+        print("ERROR: invalid run-id path", file=sys.stderr)
+        sys.exit(1)
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    workspace.mkdir(parents=True, mode=0o700)
+
+    # Create output directories from config
+    for output in config.outputs:
+        if output.path and output.path != ".":
+            (workspace / output.path).mkdir(parents=True, exist_ok=True)
+
+    # Build batch entries — include full input file content per case
+    batch_entries = []
+    case_order = []
+
+    for case_dir in case_dirs:
+        # Find the input file (first .yaml or .json in the case dir)
+        input_content = _read_input(case_dir)
+        if input_content is None:
+            continue
+
+        batch_entries.append(input_content)
+        case_order.append({"case_id": case_dir.name})
+
+    # Write batch.yaml
+    with open(workspace / "batch.yaml", "w") as f:
+        yaml.dump(batch_entries, f, default_flow_style=False,
+                  allow_unicode=True, width=120)
+
+    # Write case order
+    with open(workspace / "case_order.yaml", "w") as f:
+        yaml.dump(case_order, f, default_flow_style=False)
+
+    # Symlink project resources into workspace
+    # Skip .claude when tool hooks are configured — _setup_tool_hooks
+    # creates its own .claude/settings.json and symlinking would write
+    # into the project's .claude/ directory instead
+    project_root = Path.cwd()
+    default_symlinks = ["scripts", ".claude", "CLAUDE.md", ".context", "skills"]
+    skip_symlinks = {".claude"} if config.inputs.tools else set()
+    symlink_names = (
+        [s.strip() for s in args.symlinks.split(",") if s.strip()]
+        if args.symlinks else default_symlinks
+    )
+    for name in symlink_names:
+        if name in skip_symlinks:
+            continue
+        p = Path(name)
+        if p.is_absolute() or ".." in p.parts:
+            print(f"WARNING: skipping invalid symlink entry: {name}",
+                  file=sys.stderr)
+            continue
+        target = project_root / name
+        link = workspace / name
+        if target.exists():
+            link.symlink_to(target.resolve())
+
+    # Generate tool interception hooks if inputs.tools configured
+    if config.inputs.tools:
+        _setup_tool_hooks(workspace, config)
+
+    print(f"WORKSPACE: {workspace}")
+    print(f"CASES: {len(case_dirs)}")
+    print(f"BATCH: {workspace / 'batch.yaml'}")
+
+
+def _read_input(case_dir):
+    """Read the input file from a case directory.
+
+    Returns the parsed content (dict) or None if no input file found.
+    Prefers files named 'input.*', then falls back to first parseable file.
+    Skips known non-input files like answers.yaml and reference.*.
+    """
+    _SKIP_NAMES = {"answers", "reference", "expected", "gold"}
+
+    # First pass: look for a file named 'input.*'
+    for suffix in (".yaml", ".yml", ".json"):
+        candidate = case_dir / f"input{suffix}"
+        if candidate.is_file():
+            data = _parse_file(candidate)
+            if isinstance(data, dict):
+                return data
+
+    # Second pass: first parseable data file, skipping known non-inputs
+    for name in sorted(case_dir.iterdir()):
+        if not name.is_file() or name.stem in _SKIP_NAMES:
+            continue
+        if name.suffix in (".yaml", ".yml", ".json"):
+            data = _parse_file(name)
+            if isinstance(data, dict):
+                return data
+    return None
+
+
+def _parse_file(path):
+    """Parse a YAML or JSON file, returning the data or None on error."""
+    try:
+        if path.suffix in (".yaml", ".yml"):
+            with open(path) as f:
+                return yaml.safe_load(f)
+        elif path.suffix == ".json":
+            import json
+            with open(path) as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"WARNING: failed to parse {path}: {e}", file=sys.stderr)
+    return None
+
+
+def _extract_tool_patterns(match_text):
+    """Extract tool name patterns from a natural language match description.
+
+    Looks for known tool names and patterns like mcp__*. This is a
+    heuristic — eval-run's agent can refine these to concrete patterns
+    at runtime by reading eval.md.
+    """
+    import re
+    patterns = []
+    # Known tool names
+    known_tools = ["AskUserQuestion", "Bash", "Read", "Write", "Edit",
+                   "Glob", "Grep", "Agent", "Skill"]
+    for tool in known_tools:
+        if tool.lower() in match_text.lower():
+            patterns.append(tool)
+    # MCP tool patterns (mcp__something__*)
+    for m in re.finditer(r'(mcp__\w+(?:__\w+)*(?:\*)?)', match_text):
+        patterns.append(m.group(1))
+    # If nothing found, add "Bash" as fallback for script-based interception
+    if not patterns and ("script" in match_text.lower() or "api" in match_text.lower()):
+        patterns.append("Bash")
+    return patterns or ["*"]
+
+
+def _setup_tool_hooks(workspace, config):
+    """Generate settings.json and tool_handlers.yaml for tool interception."""
+    import json as _json
+
+    # Build handler config with resolved patterns
+    # The `match` field is natural language — for now, extract tool name
+    # patterns from it. eval-run's agent resolves complex matches to
+    # concrete patterns in tool_handlers.yaml before execution.
+    handlers = []
+    hook_matchers = set()
+    for tool_cfg in config.inputs.tools:
+        handler = {"match": tool_cfg.match}
+        # Extract simple tool name patterns from match text
+        patterns = _extract_tool_patterns(tool_cfg.match)
+        handler["patterns"] = patterns
+        if tool_cfg.prompt:
+            handler["prompt"] = tool_cfg.prompt
+        if tool_cfg.prompt_file:
+            handler["prompt_file"] = tool_cfg.prompt_file
+        handlers.append(handler)
+        hook_matchers.update(patterns)
+
+    # Write tool_handlers.yaml
+    with open(workspace / "tool_handlers.yaml", "w") as f:
+        yaml.dump({"handlers": handlers}, f, default_flow_style=False)
+
+    # Copy interceptor script
+    hooks_dir = workspace / "hooks"
+    hooks_dir.mkdir(exist_ok=True)
+    interceptor_src = Path(__file__).parent / "tools.py"
+    if interceptor_src.exists():
+        shutil.copy2(interceptor_src, hooks_dir / "tools.py")
+
+    # Generate .claude/settings.json with PreToolUse hooks
+    # Don't overwrite if symlinked from project — create alongside
+    settings_dir = workspace / ".claude"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+
+    settings = {"hooks": {"PreToolUse": []}}
+    for matcher in sorted(hook_matchers):
+        settings["hooks"]["PreToolUse"].append({
+            "matcher": matcher,
+            "hooks": [{
+                "type": "command",
+                "command": f"python3 {workspace}/hooks/tools.py",
+            }],
+        })
+
+    with open(settings_dir / "settings.json", "w") as f:
+        _json.dump(settings, f, indent=2)
+
+    print(f"HOOKS: {len(hook_matchers)} tool interceptors configured")
+
+
+if __name__ == "__main__":
+    main()

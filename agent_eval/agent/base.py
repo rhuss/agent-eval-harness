@@ -1,0 +1,62 @@
+"""Abstract runner interface for agent evaluation.
+
+Each runner implementation translates the generic run_skill() call into
+a platform-specific invocation (Claude Code CLI, Agent SDK, OpenCode, etc.).
+The eval harness only interacts with runners through this interface.
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+
+@dataclass
+class RunResult:
+    """Result of a single skill invocation."""
+    exit_code: int
+    stdout: str
+    stderr: str
+    duration_s: float
+    token_usage: Optional[dict] = None  # {"input": N, "output": N}
+    cost_usd: Optional[float] = None
+    raw_output: Optional[dict] = None  # Runner-specific parsed output
+
+
+class EvalRunner(ABC):
+    """Abstract runner -- one implementation per agent platform."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Short identifier for this runner (e.g. 'claude-code', 'agent-sdk')."""
+
+    @abstractmethod
+    def run_skill(
+        self,
+        skill_name: str,
+        args: str,
+        workspace: Path,
+        model: str,
+        settings_path: Optional[Path] = None,
+        system_prompt: Optional[str] = None,
+        max_budget_usd: float = 5.0,
+        timeout_s: int = 600,
+    ) -> RunResult:
+        """Invoke a skill in an isolated workspace.
+
+        Args:
+            skill_name: Skill to invoke (e.g. "rfe.review").
+            args: Arguments to pass (e.g. "RHAIRFE-1109").
+            workspace: Pre-staged workspace directory.
+            model: Model identifier (e.g. "opus", "sonnet").
+            settings_path: Path to eval-specific settings file.
+            system_prompt: Optional system prompt (appended).
+                Each runner translates this to its platform's API
+                (e.g. --append-system-prompt for Claude Code).
+            max_budget_usd: Maximum API spend for this invocation.
+            timeout_s: Timeout in seconds.
+
+        Returns:
+            RunResult with exit code, output, timing, and optional usage stats.
+        """

@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Validate eval.yaml and eval.md.
+
+Usage:
+    python3 ${CLAUDE_SKILL_DIR}/scripts/validate_eval.py config [eval.yaml]
+    python3 ${CLAUDE_SKILL_DIR}/scripts/validate_eval.py memory [eval.md]
+"""
+
+import hashlib
+import sys
+from pathlib import Path
+
+import yaml
+
+# Import skill lookup from sibling module
+sys.path.insert(0, str(Path(__file__).parent))
+from find_skills import find_skill
+
+
+def validate_config(path="eval.yaml"):
+    """Validate eval.yaml — structure, completeness, and file references."""
+    p = Path(path)
+    if not p.exists():
+        print(f"NOT_FOUND: {path}")
+        sys.exit(1)
+
+    with open(p) as f:
+        config = yaml.safe_load(f) or {}
+
+    errors = []
+    warnings = []
+
+    # --- Structure checks ---
+    if not config.get("skill"):
+        errors.append("Missing 'skill' field")
+    if not config.get("name"):
+        errors.append("Missing 'name' field")
+
+    dataset = config.get("dataset", {})
+    outputs = config.get("outputs", [])
+    judges = config.get("judges", [])
+
+    if not dataset.get("path"):
+        warnings.append("No dataset.path — eval-run won't find test cases")
+    if not dataset.get("schema"):
+        warnings.append("No dataset.schema — agents won't understand case structure")
+    if not outputs:
+        warnings.append("No outputs — collect step won't know where to find artifacts")
+    if not judges:
+        warnings.append("No judges — scoring step will have nothing to run")
+
+    # --- Skill reference check ---
+    skill_name = config.get("skill", "")
+    if skill_name and not find_skill(skill_name):
+        warnings.append(f"skill '{skill_name}' not found in project")
+
+    # --- File reference checks ---
+    dataset_path = dataset.get("path", "")
+    if dataset_path:
+        dp = Path(dataset_path)
+        if not dp.exists():
+            errors.append(f"dataset.path '{dataset_path}' does not exist")
+        elif not any(p for p in dp.iterdir() if not p.name.startswith(".")):
+            warnings.append(f"dataset.path '{dataset_path}' is empty")
+
+    for i, o in enumerate(outputs):
+        out_path = o.get("path", "")
+        if out_path:
+            op = Path(out_path)
+            if op.is_absolute():
+                errors.append(f"outputs[{i}].path must be relative: {out_path}")
+            elif ".." in op.parts:
+                errors.append(f"outputs[{i}].path must not traverse parent: {out_path}")
+
+    for j in judges:
+        name = j.get("name", "unnamed")
+        prompt_file = j.get("prompt_file", "")
+        if prompt_file and not Path(prompt_file).exists():
+            errors.append(f"judges.{name}.prompt_file '{prompt_file}' not found")
+        for ctx_file in j.get("context", []):
+            if not Path(ctx_file).exists():
+                warnings.append(f"judges.{name}.context '{ctx_file}' not found")
+        module = j.get("module", "")
+        if module:
+            try:
+                import importlib
+                importlib.import_module(module)
+            except ImportError:
+                errors.append(f"judges.{name}.module '{module}' not importable")
+
+    # --- Inputs (tool interception) ---
+    for t in (config.get("inputs", {}).get("tools") or []):
+        if not t.get("match"):
+            warnings.append("inputs.tools entry missing 'match' field")
+        if not t.get("prompt") and not t.get("prompt_file"):
+            warnings.append(f"inputs.tools entry '{t.get('match', '?')[:30]}' has no prompt")
+        prompt_file = t.get("prompt_file", "")
+        if prompt_file and not Path(prompt_file).exists():
+            errors.append(f"inputs.tools prompt_file '{prompt_file}' not found")
+
+    settings = config.get("runner_options", {}).get("settings", "")
+    if settings and not Path(settings).exists():
+        errors.append(f"runner_options.settings '{settings}' not found")
+
+    # --- Report ---
+    if errors:
+        for e in errors:
+            print(f"ERROR: {e}")
+
+    status = "VALID"
+    if errors:
+        status = "INVALID"
+    elif warnings:
+        status = "INCOMPLETE"
+
+    print(f"{status}: {config.get('name')} (skill={config.get('skill')})")
+    print(f"  dataset: {dataset.get('path', 'not set')}")
+    print(f"  schema: {'yes' if dataset.get('schema') else 'no'}")
+    print(f"  outputs: {len(outputs)} directories")
+    print(f"  judges: {len(judges)}")
+
+    for w in warnings:
+        print(f"  WARNING: {w}")
+
+    if errors:
+        sys.exit(1)
+
+
+def validate_memory(path="eval.md"):
+    """Check if eval.md is fresh (skill hasn't changed)."""
+    p = Path(path)
+    if not p.exists():
+        print("STALE: eval.md does not exist")
+        sys.exit(1)
+
+    content = p.read_text()
+    if not content.startswith("---"):
+        print("STALE: no frontmatter")
+        sys.exit(1)
+
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        print("STALE: invalid frontmatter")
+        sys.exit(1)
+
+    fm = yaml.safe_load(parts[1]) or {}
+    skill_name = fm.get("skill", "")
+    stored_hash = fm.get("skill_hash", "")
+
+    if not skill_name or not stored_hash:
+        print("STALE: missing skill or hash in frontmatter")
+        sys.exit(1)
+
+    skill_path = find_skill(skill_name)
+    if not skill_path:
+        print(f"STALE: skill '{skill_name}' not found")
+        sys.exit(1)
+
+    current_hash = hashlib.sha256(skill_path.read_bytes()).hexdigest()[:12]
+    if current_hash == stored_hash:
+        print(f"FRESH: {skill_name} (hash={stored_hash})")
+    else:
+        print(f"STALE: skill changed ({stored_hash} -> {current_hash})")
+        sys.exit(1)
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: validate_eval.py <config|memory> [path]", file=sys.stderr)
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+    if cmd == "config":
+        path = sys.argv[2] if len(sys.argv) > 2 else "eval.yaml"
+        validate_config(path)
+    elif cmd == "memory":
+        path = sys.argv[2] if len(sys.argv) > 2 else "eval.md"
+        validate_memory(path)
+    else:
+        print(f"Unknown: {cmd}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
