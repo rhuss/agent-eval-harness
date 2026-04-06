@@ -55,6 +55,18 @@ def main():
     # Resolve skill args: CLI override > config > empty
     skill_args = args.skill_args if args.skill_args is not None else config.arguments
 
+    # Resolve {prompt} placeholder from batch.yaml
+    if skill_args and "{prompt}" in skill_args:
+        batch_path = Path(args.workspace) / "batch.yaml"
+        if batch_path.exists():
+            import yaml as _yaml
+            with open(batch_path) as _f:
+                batch = _yaml.safe_load(_f) or []
+            if isinstance(batch, list) and batch:
+                entry = batch[0]
+                prompt_text = entry.get("prompt", "") if isinstance(entry, dict) else str(entry)
+                skill_args = skill_args.replace("{prompt}", prompt_text.strip())
+
     # Build runner
     agent = args.agent or config.runner
     if agent not in RUNNERS:
