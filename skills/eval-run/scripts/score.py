@@ -295,10 +295,6 @@ def _load_code_judge(jc, project_root=None):
 
 
 def _load_llm_judge(jc, project_root=None):
-    try:
-        from mlflow.genai.judges import make_judge
-    except ImportError:
-        raise ImportError("mlflow[genai] required for LLM judges")
     root = Path(project_root).resolve() if project_root else Path.cwd().resolve()
     prompt = jc.prompt
     if not prompt and jc.prompt_file:
@@ -319,10 +315,74 @@ def _load_llm_judge(jc, project_root=None):
         _resolve_under(root, path)
         if path.exists():
             prompt += f"\n\n## Context: {path.name}\n\n{path.read_text()}"
-    kwargs = {"name": jc.name, "instructions": prompt}
-    if jc.feedback_type:
-        kwargs["feedback_value_type"] = _parse_feedback_type(jc.feedback_type)
-    return make_judge(**kwargs)
+
+    # Use direct Anthropic client when Vertex AI is configured (MLflow's
+    # make_judge uses litellm which requires OpenAI API key by default)
+    if os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID") or os.environ.get("ANTHROPIC_API_KEY"):
+        return _make_anthropic_llm_judge(jc.name, prompt)
+
+    # MLflow make_judge (requires OpenAI-compatible API key)
+    try:
+        from mlflow.genai.judges import make_judge
+        kwargs = {"name": jc.name, "instructions": prompt}
+        if jc.feedback_type:
+            kwargs["feedback_value_type"] = _parse_feedback_type(jc.feedback_type)
+        return make_judge(**kwargs)
+    except ImportError:
+        pass
+
+    raise RuntimeError(f"LLM judge '{jc.name}' requires ANTHROPIC_VERTEX_PROJECT_ID, "
+                       "ANTHROPIC_API_KEY, or OPENAI_API_KEY")
+
+
+def _make_anthropic_llm_judge(name, prompt):
+    """Create an LLM judge using the Anthropic client directly.
+
+    Falls back to this when MLflow make_judge fails (e.g., no OpenAI key).
+    Supports Vertex AI via ANTHROPIC_VERTEX_PROJECT_ID.
+    """
+    import re
+
+    def scorer(outputs=None, **kwargs):
+        client = _get_anthropic_client()
+        # Render {{ outputs }} template variable
+        rendered_prompt = prompt
+        if outputs and "{{ outputs }}" in rendered_prompt:
+            # Build a text summary of outputs for the LLM
+            files = outputs.get("files", {})
+            output_text = ""
+            for path, content in sorted(files.items()):
+                output_text += f"\n### {path}\n\n{content}\n"
+            rendered_prompt = rendered_prompt.replace("{{ outputs }}", output_text)
+
+        # Use the best available model; fall back through options
+        judge_model = os.environ.get("EVAL_JUDGE_MODEL", "claude-3-5-haiku@20241022")
+        response = client.messages.create(
+            model=judge_model,
+            max_tokens=1024,
+            system="You are a judge evaluating skill outputs. "
+                   "Return a JSON object with 'score' (integer 1-5) and 'rationale' (string).",
+            messages=[{"role": "user", "content": rendered_prompt}],
+        )
+        text = response.content[0].text.strip()
+        # Extract score from JSON response
+        try:
+            # Try parsing as JSON
+            match = re.search(r'\{[^{}]*"score"\s*:\s*(\d+)[^{}]*\}', text, re.DOTALL)
+            if match:
+                score_val = int(match.group(1))
+                rationale_match = re.search(r'"rationale"\s*:\s*"([^"]*)"', text)
+                rationale = rationale_match.group(1) if rationale_match else text
+                return (score_val, rationale)
+        except (ValueError, AttributeError):
+            pass
+        # Fallback: try to find a number
+        nums = re.findall(r'\b([1-5])\b', text)
+        if nums:
+            return (int(nums[0]), text[:200])
+        return (3, f"Could not parse score from: {text[:200]}")
+
+    return scorer
 
 
 def _parse_feedback_type(type_str):
@@ -503,8 +563,8 @@ def detect_regressions(current_results, thresholds, baseline_results=None):
                 regressions.append(Regression(judge_name, "pass_rate",
                                               f">= {threshold['min_pass_rate']}", str(rate)))
         if "min_mean" in threshold:
-            mean = current.get("mean", 0)
-            if mean < threshold["min_mean"]:
+            mean = current.get("mean")
+            if mean is not None and mean < threshold["min_mean"]:
                 regressions.append(Regression(judge_name, "mean",
                                               f">= {threshold['min_mean']}", str(mean)))
         if "min_win_rate" in threshold:
