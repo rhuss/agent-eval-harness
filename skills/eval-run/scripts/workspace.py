@@ -124,6 +124,17 @@ def main():
         if target.exists():
             link.symlink_to(target.resolve())
 
+    # When .claude is skipped for hooks, symlink subdirectories (e.g. skills/)
+    if ".claude" in skip_symlinks:
+        claude_dir = project_root / ".claude"
+        if claude_dir.is_dir():
+            for sub in claude_dir.iterdir():
+                if sub.is_dir() and sub.name != "settings.json":
+                    link = workspace / ".claude" / sub.name
+                    if not link.exists():
+                        link.parent.mkdir(parents=True, exist_ok=True)
+                        link.symlink_to(sub.resolve())
+
     # Generate tool interception hooks if inputs.tools configured
     if config.inputs.tools:
         _setup_tool_hooks(workspace, config)
