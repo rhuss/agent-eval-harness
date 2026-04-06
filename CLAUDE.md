@@ -46,6 +46,7 @@ skills/eval-run/         # Skill: execute eval suite
     execute.py           # Skill execution via agent runner
     collect.py           # Artifact collection + case mapping
     score.py             # Scoring: inline checks, LLM judges, pairwise, regression
+    report.py            # HTML report generation (scoring summary, per-case details, diffs)
     tools.py             # PreToolUse hook for tool interception
   prompts/
     analyze-results.md   # Results interpretation prompt

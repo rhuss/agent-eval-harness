@@ -220,6 +220,28 @@ Read the summary and analyze the results. Use the framework in `${CLAUDE_SKILL_D
 
 Be decisive — state assessments, not hedges. "The skill fails to produce reviews for cases with long inputs" is better than "there might be an issue with some cases."
 
+**Save analysis to file** so it persists in the report:
+
+```bash
+cat > $AGENT_EVAL_RUNS_DIR/<id>/analysis.md << 'EOF'
+<your full analysis here — key findings, failure patterns, root causes, recommendations>
+EOF
+```
+
+Write the analysis as markdown with `## Key Findings` and `## Recommendations` sections. This file is included in the HTML report automatically.
+
+**Generate HTML report**:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/report.py \
+  --run-id <id> \
+  --config <config> \
+  [--baseline <baseline_id>] \
+  --open
+```
+
+Tell the user the report is at `$AGENT_EVAL_RUNS_DIR/<id>/report.html`.
+
 **If `--gold` flag**: After scoring, copy collected artifacts to dataset case dirs as reference files. Report which cases were saved.
 
 Suggest next steps (include `--config <config>` if a non-default config was used):
