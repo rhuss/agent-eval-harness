@@ -83,8 +83,13 @@ def main():
         if input_content is None:
             continue
 
-        batch_entries.append(input_content)
-        case_order.append({"case_id": case_dir.name})
+        # Flatten list inputs so batch.yaml is a single flat list
+        if isinstance(input_content, list):
+            batch_entries.extend(input_content)
+            case_order.append({"case_id": case_dir.name, "entry_count": len(input_content)})
+        else:
+            batch_entries.append(input_content)
+            case_order.append({"case_id": case_dir.name, "entry_count": 1})
 
     # Write batch.yaml
     with open(workspace / "batch.yaml", "w") as f:
@@ -142,7 +147,7 @@ def _read_input(case_dir):
         candidate = case_dir / f"input{suffix}"
         if candidate.is_file():
             data = _parse_file(candidate)
-            if isinstance(data, dict):
+            if data is not None:
                 return data
 
     # Second pass: first parseable data file, skipping known non-inputs
@@ -151,7 +156,7 @@ def _read_input(case_dir):
             continue
         if name.suffix in (".yaml", ".yml", ".json"):
             data = _parse_file(name)
-            if isinstance(data, dict):
+            if data is not None:
                 return data
     return None
 
