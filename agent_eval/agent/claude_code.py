@@ -35,6 +35,7 @@ class ClaudeCodeRunner(EvalRunner):
         self._log_prefix = log_prefix
         self._settings = opts.get("settings")
         self._max_budget = opts.get("max_budget_usd")
+        self._system_prompt = opts.get("system_prompt")
 
     @property
     def name(self) -> str:
@@ -70,8 +71,9 @@ class ClaudeCodeRunner(EvalRunner):
         if settings_path:
             cmd.extend(["--settings", str(settings_path)])
 
-        if system_prompt:
-            cmd.extend(["--append-system-prompt", system_prompt])
+        effective_prompt = system_prompt or self._system_prompt
+        if effective_prompt:
+            cmd.extend(["--append-system-prompt", effective_prompt])
 
         # Permissions: allow/deny tool patterns
         deny = self._permissions.get("deny", [])
@@ -159,13 +161,32 @@ class ClaudeCodeRunner(EvalRunner):
             except json.JSONDecodeError:
                 pass
 
+        # Accumulate usage across all result events (background agent
+        # completions produce multiple result events in stream-json mode)
+        total_input = 0
+        total_output = 0
+        total_cache_read = 0
+        total_cache_create = 0
+        for line in stdout_lines:
+            try:
+                obj = json.loads(line)
+                if obj.get("type") == "result":
+                    u = obj.get("usage", {})
+                    total_input += u.get("input_tokens", 0)
+                    total_output += u.get("output_tokens", 0)
+                    total_cache_read += u.get("cache_read_input_tokens", 0)
+                    total_cache_create += u.get("cache_creation_input_tokens", 0)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        if total_input or total_output:
+            token_usage = {
+                "input": total_input,
+                "output": total_output,
+                "cache_read": total_cache_read,
+                "cache_create": total_cache_create,
+            }
+        # Cost from the last result event (cumulative in Claude Code)
         if isinstance(result_obj, dict):
-            usage = result_obj.get("usage", {})
-            if usage:
-                token_usage = {
-                    "input": usage.get("input_tokens", 0),
-                    "output": usage.get("output_tokens", 0),
-                }
             cost_usd = result_obj.get("total_cost_usd")
 
         return RunResult(
