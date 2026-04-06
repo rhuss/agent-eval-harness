@@ -214,7 +214,8 @@ details.case > summary:hover { color: #2563eb; }
 .diff-table tr.hdr td { background: #f0f0f0; color: #666; font-weight: bold; }
 .diff-table .wdel { background: #fdb8c0; border-radius: 2px; }
 .diff-table .wadd { background: #acf2bd; border-radius: 2px; }
-pre.output { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 0.8em; font-size: 0.82em; overflow-x: auto; max-height: 400px; overflow-y: auto; }
+pre.output { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 0.8em; font-size: 0.82em; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
+.html-preview { width: 100%; border: 1px solid #d0d0d0; border-radius: 4px; margin: 0.5em 0; background: #fff; }
 .analysis { background: #f8fafc; border: 1px solid #d0dae8; border-radius: 8px; padding: 1.2em; margin: 1.5em 0; }
 .analysis h2 { margin-top: 0; }
 .analysis h3 { margin-top: 1em; color: #334155; }
@@ -421,56 +422,152 @@ def _render_analysis(run_dir):
     if not content:
         return ""
 
-    # Convert markdown to simple HTML (headers, lists, bold)
-    import re
-    lines = content.splitlines()
-    html_lines = []
-    in_list = False
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("## "):
-            if in_list:
-                html_lines.append("</ul>")
-                in_list = False
-            html_lines.append(f"<h3>{_esc(stripped[3:])}</h3>")
-        elif stripped.startswith("# "):
-            if in_list:
-                html_lines.append("</ul>")
-                in_list = False
-            html_lines.append(f"<h2>{_esc(stripped[2:])}</h2>")
-        elif stripped.startswith("- "):
-            if not in_list:
-                html_lines.append("<ul>")
-                in_list = True
-            item = stripped[2:]
-            # Bold **text** and inline code `text`
-            item = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', _esc(item))
-            item = re.sub(r'`(.+?)`', r'<code>\1</code>', item)
-            html_lines.append(f"<li>{item}</li>")
-        elif re.match(r'^\d+\.\s', stripped):
-            if not in_list:
-                html_lines.append("<ol>")
-                in_list = True
-            item = re.sub(r'^\d+\.\s', '', stripped)
-            item = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', _esc(item))
-            item = re.sub(r'`(.+?)`', r'<code>\1</code>', item)
-            html_lines.append(f"<li>{item}</li>")
-        elif not stripped:
-            if in_list:
-                html_lines.append("</ul>" if "</li>" in html_lines[-1] else "</ol>")
-                in_list = False
-            html_lines.append("")
-        else:
-            if in_list:
-                html_lines.append("</ul>")
-                in_list = False
-            text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', _esc(stripped))
-            text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
-            html_lines.append(f"<p>{text}</p>")
-    if in_list:
-        html_lines.append("</ul>")
+    return '<div class="analysis">\n' + _md_to_html(content) + "\n</div>\n"
 
-    return '<div class="analysis">\n' + "\n".join(html_lines) + "\n</div>\n"
+
+def _md_to_html(md_text):
+    """Convert markdown to HTML. Handles headers, lists, tables, code blocks,
+    bold, italic, inline code, and links."""
+    import re
+
+    lines = md_text.splitlines()
+    out = []
+    i = 0
+    list_stack = []  # stack of "ul" or "ol"
+
+    def _close_lists():
+        while list_stack:
+            out.append(f"</{list_stack.pop()}>")
+
+    def _inline(text):
+        """Apply inline formatting: bold, italic, code, links."""
+        text = _esc(text)
+        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+        text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
+        text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+        text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
+        return text
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        # Fenced code block
+        if stripped.startswith("```"):
+            _close_lists()
+            lang = stripped[3:].strip()
+            code_lines = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                code_lines.append(lines[i])
+                i += 1
+            out.append(f'<pre class="output">{_esc(chr(10).join(code_lines))}</pre>')
+            i += 1
+            continue
+
+        # Table (line starts with |)
+        if stripped.startswith("|") and "|" in stripped[1:]:
+            _close_lists()
+            table_lines = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                table_lines.append(lines[i].strip())
+                i += 1
+            out.append(_md_table_to_html(table_lines))
+            continue
+
+        # Headers
+        if stripped.startswith("### "):
+            _close_lists()
+            out.append(f"<h4>{_inline(stripped[4:])}</h4>")
+            i += 1
+            continue
+        if stripped.startswith("## "):
+            _close_lists()
+            out.append(f"<h3>{_inline(stripped[3:])}</h3>")
+            i += 1
+            continue
+        if stripped.startswith("# "):
+            _close_lists()
+            out.append(f"<h2>{_inline(stripped[2:])}</h2>")
+            i += 1
+            continue
+
+        # Unordered list
+        if stripped.startswith("- "):
+            if not list_stack or list_stack[-1] != "ul":
+                if list_stack and list_stack[-1] == "ol":
+                    out.append(f"</{list_stack.pop()}>")
+                list_stack.append("ul")
+                out.append("<ul>")
+            out.append(f"<li>{_inline(stripped[2:])}</li>")
+            i += 1
+            continue
+
+        # Ordered list
+        m = re.match(r'^(\d+)\.\s(.+)', stripped)
+        if m:
+            if not list_stack or list_stack[-1] != "ol":
+                if list_stack and list_stack[-1] == "ul":
+                    out.append(f"</{list_stack.pop()}>")
+                list_stack.append("ol")
+                out.append("<ol>")
+            out.append(f"<li>{_inline(m.group(2))}</li>")
+            i += 1
+            continue
+
+        # Blank line
+        if not stripped:
+            _close_lists()
+            i += 1
+            continue
+
+        # Paragraph
+        _close_lists()
+        out.append(f"<p>{_inline(stripped)}</p>")
+        i += 1
+
+    _close_lists()
+    return "\n".join(out)
+
+
+def _md_table_to_html(table_lines):
+    """Convert markdown table lines to an HTML table."""
+    if len(table_lines) < 2:
+        return ""
+
+    def _parse_row(line):
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        return cells
+
+    headers = _parse_row(table_lines[0])
+
+    # Skip separator row (line with dashes/colons)
+    data_start = 1
+    if len(table_lines) > 1 and all(
+            c.strip().replace("-", "").replace(":", "").replace(" ", "") == ""
+            for c in table_lines[1].strip().strip("|").split("|")):
+        data_start = 2
+
+    html = "<table>\n<tr>"
+    for h in headers:
+        html += f"<th>{_esc(h)}</th>"
+    html += "</tr>\n"
+
+    for row_line in table_lines[data_start:]:
+        cells = _parse_row(row_line)
+        html += "<tr>"
+        for c in cells:
+            # Color-code PASS/FAIL cells
+            cls = ""
+            if c.strip() == "PASS":
+                cls = ' class="pass"'
+            elif c.strip() == "FAIL":
+                cls = ' class="fail"'
+            html += f"<td{cls}>{_esc(c)}</td>"
+        html += "</tr>\n"
+
+    html += "</table>"
+    return html
 
 
 def _render_per_case(summary, run_dir, config, baseline_dir, review):
@@ -554,14 +651,31 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                 html += "<details open><summary>Output files</summary>\n"
                 for f in files:
                     rel = f.relative_to(case_dir)
-                    content = _read_text(f, max_lines=200)
-                    if content:
-                        html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
-                                 f'<pre class="output">{_esc(content)}</pre>\n')
+                    if f.suffix == ".html":
+                        # Render HTML files inline in a sandboxed iframe
+                        try:
+                            html_content = f.read_text()
+                            # Escape for srcdoc attribute (double-escape quotes)
+                            srcdoc = (html_content
+                                      .replace("&", "&amp;")
+                                      .replace('"', "&quot;"))
+                            html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                     f'<iframe class="html-preview" srcdoc="{srcdoc}" '
+                                     f'sandbox="allow-same-origin" '
+                                     f'onload="this.style.height=this.contentDocument.documentElement.scrollHeight+20+\'px\'"'
+                                     f'></iframe>\n')
+                        except (UnicodeDecodeError, OSError):
+                            html += (f'<div class="file-badge">{_esc(str(rel))} '
+                                     f'<span class="skip">(could not read)</span></div>\n')
                     else:
-                        size = f.stat().st_size
-                        html += (f'<div class="file-badge">{_esc(str(rel))} '
-                                 f'<span class="skip">({size} bytes, binary)</span></div>\n')
+                        content = _read_text(f, max_lines=200)
+                        if content:
+                            html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                     f'<pre class="output">{_esc(content)}</pre>\n')
+                        else:
+                            size = f.stat().st_size
+                            html += (f'<div class="file-badge">{_esc(str(rel))} '
+                                     f'<span class="skip">({size} bytes, binary)</span></div>\n')
                 html += "</details>\n"
 
         # Baseline diff
