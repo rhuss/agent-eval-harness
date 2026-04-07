@@ -52,6 +52,8 @@ outputs:
   - path: <output directory>
     schema: |
       <natural language description of artifacts in this directory>
+    # batch_pattern: "PREFIX-{n:03d}"  # For batch execution: {n} = 1-based case index
+    #                                   # Use "*" for shared dirs (copied to all cases)
 
   # Tool call outputs (for side effects like API calls)
   # - tool: <tool_name_pattern>
@@ -75,11 +77,14 @@ judges:
       <python snippet — receives outputs dict, returns (bool, str)>
 
   # LLM judge: assess quality with a prompt
+  # IMPORTANT: include {{ outputs }} so the LLM can see the skill's output files
   - name: <descriptive_name>
     description: |
       <what this judge evaluates>
     prompt: |
-      <evaluation instructions — define what each score level means>
+      <preamble — what to evaluate>
+      {{ outputs }}
+      <scoring criteria — define what each score level means>
     # Optional: supplementary context files
     # context:
     #   - eval/prompts/scoring-rubric.md
@@ -139,12 +144,56 @@ The difference: a good schema lets judges write `outputs["main_content"]` knowin
 - YAML/JSON fields are present and have valid values
 - Counts, ranges, and formats are correct
 
-Keep check scripts short (under 15 lines). They receive an `outputs` dict with file contents, execution metadata (`exit_code`, `duration_s`, `cost_usd`, `num_turns`), tool calls (`tool_calls` list), and logs (`stdout`, `stderr`).
+Keep check scripts short (under 15 lines). They receive an `outputs` dict — **always use this dict to access files, never use `os.listdir()` or filesystem paths** (judges run in the project root, not the per-case output directory).
+
+Key fields in `outputs`:
+- `outputs["files"]` — dict of `{relative_path: file_content}`, e.g. `{"artifacts/rfe-tasks/RFE-001.md": "# Summary\n..."}`
+- `outputs["case_dir"]` — absolute path to the per-case output directory
+- `outputs["exit_code"]`, `outputs["duration_s"]`, `outputs["cost_usd"]`, `outputs["num_turns"]` — execution metadata
+- `outputs["tool_calls"]` — list of captured tool calls
+- `outputs["stdout"]`, `outputs["stderr"]` — captured logs
+
+Example check judge — find files by path prefix and read their content:
+```yaml
+  - name: files_exist
+    check: |
+      files = outputs.get("files", {})
+      tasks = [k for k in files if k.startswith("output_dir/") and k.endswith(".md")]
+      if not tasks:
+          return (False, "No output files found")
+      return (True, f"{len(tasks)} files found")
+
+  - name: valid_yaml_header
+    check: |
+      import yaml
+      files = outputs.get("files", {})
+      reviews = {k: v for k, v in files.items() if k.endswith("-review.md")}
+      for fname, content in reviews.items():
+          parts = content.split('---', 2)
+          fm = yaml.safe_load(parts[1])
+          if 'score' not in fm:
+              return (False, f"{fname}: missing score")
+      return (True, f"{len(reviews)} reviews valid")
+```
 
 **LLM `prompt` judges** assess quality — things that need understanding:
 - Completeness: does the output cover all requirements?
 - Accuracy: is the content correct?
 - Relevance: does it address the input?
+
+**IMPORTANT**: LLM judges only see what's in their prompt text. To include the skill's output files, use the `{{ outputs }}` template variable. The harness replaces it with all collected file contents (from `outputs[*].path` directories), formatted as markdown sections with file paths as headers. Without `{{ outputs }}`, the LLM receives only the raw prompt text and cannot see any output files.
+
+Example:
+```yaml
+  - name: output_quality
+    prompt: |
+      Review the following outputs:
+
+      {{ outputs }}
+
+      Score on a 1-5 scale:
+      ...
+```
 
 Be specific about scoring criteria. "Score 1-5" is too vague. Define what each level means:
 ```
