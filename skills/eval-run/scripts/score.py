@@ -358,7 +358,7 @@ def _make_anthropic_llm_judge(name, prompt):
             rendered_prompt = rendered_prompt.replace("{{ outputs }}", output_text)
 
         # Use the best available model; fall back through options
-        judge_model = os.environ.get("EVAL_JUDGE_MODEL", "claude-sonnet-4-6@20250514")
+        judge_model = os.environ.get("EVAL_JUDGE_MODEL", "claude-sonnet-4-6")
         response = client.messages.create(
             model=judge_model,
             max_tokens=1024,
