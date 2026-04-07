@@ -40,8 +40,8 @@ def main():
     parser.add_argument("--agent", default=None,
                         help="Agent runner override (default: from config)")
     parser.add_argument("--subagent-model", default=None)
-    parser.add_argument("--max-budget", type=float, default=100.0)
-    parser.add_argument("--timeout", type=int, default=3600)
+    parser.add_argument("--max-budget", type=float, default=None)
+    parser.add_argument("--timeout", type=int, default=None)
     parser.add_argument("--mlflow-experiment", default=None)
     args = parser.parse_args()
 
@@ -91,6 +91,11 @@ def main():
     workspace_settings = Path(args.workspace) / ".claude" / "settings.json"
     settings_path = workspace_settings if workspace_settings.exists() else None
 
+    # Resolve timeout and budget: CLI override > runner_options > defaults
+    opts = config.runner_options or {}
+    timeout_s = args.timeout or opts.get("timeout", 3600)
+    max_budget = args.max_budget or opts.get("max_budget_usd", 100.0)
+
     # Run via the abstraction
     result = runner.run_skill(
         skill_name=args.skill,
@@ -98,8 +103,8 @@ def main():
         workspace=Path(args.workspace),
         model=args.model,
         settings_path=settings_path,
-        max_budget_usd=args.max_budget,
-        timeout_s=args.timeout,
+        max_budget_usd=max_budget,
+        timeout_s=timeout_s,
     )
 
     # Save results
