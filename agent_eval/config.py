@@ -24,10 +24,18 @@ class OutputConfig:
     Output types (determined by which field is set):
     - path: file artifacts in a directory on disk
     - tool: tool calls to capture from stream-json events
+
+    Batch collection (optional):
+    - batch_pattern: maps output files to cases when the skill processes
+      all cases in a single invocation.  Uses {n} as a 1-based batch
+      index (e.g. "RFE-{n:03d}" → "RFE-001", "RFE-002").  Files whose
+      name starts with the expanded prefix are assigned to that case.
+      Use "*" for shared directories (copied to every case).
     """
     path: str = ""       # File artifacts directory
     tool: str = ""       # Tool call name/pattern to capture
     schema: str = ""
+    batch_pattern: str = ""  # Batch collection pattern (empty = auto-detect)
 
 
 @dataclass
@@ -158,6 +166,7 @@ class EvalConfig:
                     o.get("path", ""), f"outputs[{i}].path"),
                 tool=o.get("tool", ""),
                 schema=o.get("schema", ""),
+                batch_pattern=o.get("batch_pattern", ""),
             ))
 
         # Inputs (tool interception)

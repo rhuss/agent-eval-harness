@@ -72,28 +72,34 @@ def main():
         if not files:
             continue
 
-        # Positional mapping: distribute files across cases
-        # Group files by common prefix (e.g., "RFE-001-foo.md" and "RFE-001-bar.md"
-        # share prefix "RFE-001"). If no clear grouping, use one file per case.
-        groups = _group_files(files, len(case_order))
+        if output_cfg.batch_pattern:
+            # Batch mode: use the configured pattern to map files to cases
+            mapping = _collect_batch(files, case_order, output_cfg.batch_pattern)
+        else:
+            # Auto-detect mode: group files by common prefix
+            groups = _group_files(files, len(case_order))
+            mapping = {}
+            for i, group in enumerate(groups):
+                if i >= len(case_order):
+                    break
+                entry = case_order[i]
+                cid = entry["case_id"] if isinstance(entry, dict) else entry
+                mapping[cid] = group
 
-        for i, group in enumerate(groups):
-            if i >= len(case_order):
-                break
-            entry = case_order[i]
-            case_id = entry["case_id"] if isinstance(entry, dict) else entry
-
+        for case_id, matched_files in mapping.items():
+            if not matched_files:
+                continue
             case_output = output_dir / "cases" / case_id / out_path
             case_output.mkdir(parents=True, exist_ok=True)
 
-            for src_file in group:
+            for src_file in matched_files:
                 # Preserve subdirectory structure relative to src_dir
                 rel = src_file.relative_to(src_dir)
                 dest = case_output / rel
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_file, dest)
 
-            results.setdefault(case_id, {})[out_path] = len(group)
+            results.setdefault(case_id, {})[out_path] = len(matched_files)
 
     # Save collection summary
     with open(output_dir / "collection.json", "w") as f:
@@ -105,6 +111,46 @@ def main():
 
     if not results:
         print("WARNING: no artifacts collected", file=sys.stderr)
+
+
+def _collect_batch(files, case_order, batch_pattern):
+    """Map files to cases using a batch_pattern from eval.yaml.
+
+    Args:
+        files: sorted list of Path objects in the output directory
+        case_order: list of {"case_id": str, "entry_count": int} dicts
+        batch_pattern: pattern with {n} placeholder (1-based index),
+                       or "*" for shared directories
+
+    Returns:
+        dict mapping case_id → list of matching Path objects
+    """
+    # Shared: all files go to every case
+    if batch_pattern == "*":
+        return {
+            (e["case_id"] if isinstance(e, dict) else e): list(files)
+            for e in case_order
+        }
+
+    result = {}
+    batch_idx = 1
+    for entry in case_order:
+        case_id = entry["case_id"] if isinstance(entry, dict) else entry
+        count = entry.get("entry_count", 1) if isinstance(entry, dict) else 1
+
+        matching = []
+        for n in range(batch_idx, batch_idx + count):
+            try:
+                prefix = batch_pattern.format(n=n)
+            except (KeyError, ValueError):
+                prefix = batch_pattern.replace("{n}", str(n))
+            matching.extend(f for f in files if f.name.startswith(prefix))
+
+        if matching:
+            result[case_id] = matching
+        batch_idx += count
+
+    return result
 
 
 def _group_files(files, num_cases):
