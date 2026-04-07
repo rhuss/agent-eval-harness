@@ -1,5 +1,7 @@
 """MLflow experiment management utilities."""
 
+import os
+import shutil
 import subprocess
 import sys
 from typing import Optional
@@ -74,7 +76,23 @@ def setup_autolog(project_dir: str, tracking_uri: str = "http://127.0.0.1:5000",
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Failed to setup MLflow autolog: {result.stderr}", file=sys.stderr)
-    return result.returncode == 0
+        return False
+
+    # MLflow generates the hook with bare "python" which may not exist outside
+    # a virtualenv (e.g. macOS only has "python3"). Replace with the absolute
+    # path to python3, which preserves the virtualenv if one is active at
+    # setup time and works regardless of the hook's shell environment.
+    python_path = shutil.which("python3") or shutil.which("python")
+    settings_path = os.path.join(project_dir, ".claude", "settings.json")
+    if python_path and os.path.exists(settings_path):
+        with open(settings_path) as f:
+            content = f.read()
+        fixed = content.replace('"python -c', f'"{python_path} -c')
+        if fixed != content:
+            with open(settings_path, "w") as f:
+                f.write(fixed)
+
+    return True
 
 
 def log_feedback(trace_id: str, name: str, value, source_type: str = "CODE",
