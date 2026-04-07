@@ -270,8 +270,17 @@ def _setup_tool_hooks(workspace, config):
             proj_perms = proj.get("permissions", {})
             if proj_perms.get("allow"):
                 settings.setdefault("permissions", {})["allow"] = proj_perms["allow"]
+            if proj_perms.get("additionalDirectories"):
+                settings.setdefault("permissions", {}).setdefault(
+                    "additionalDirectories", []).extend(proj_perms["additionalDirectories"])
         except (_json.JSONDecodeError, OSError):
             pass
+
+    # Grant access to the project root so symlinked resources (skills,
+    # scripts, context) can be read by the sandbox.
+    project_root = str(Path.cwd().resolve())
+    settings.setdefault("permissions", {}).setdefault(
+        "additionalDirectories", []).append(project_root)
 
     with open(settings_dir / "settings.json", "w") as f:
         _json.dump(settings, f, indent=2)
