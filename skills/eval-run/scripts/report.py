@@ -301,8 +301,20 @@ def _render_scoring_summary(summary, config, baseline_summary=None):
     bl_judges = baseline_summary.get("judges", {}) if baseline_summary else {}
     has_bl = bool(bl_judges)
 
+    # Build judge type/model lookup from config
+    judge_info = {}
+    default_model = os.environ.get("EVAL_JUDGE_MODEL", "claude-sonnet-4-6@20250514")
+    for jc in config.get("judges", []):
+        jname = jc.get("name", "")
+        if jc.get("check"):
+            judge_info[jname] = ("check", "—")
+        elif jc.get("prompt") or jc.get("prompt_file"):
+            judge_info[jname] = ("llm", jc.get("model") or default_model)
+        elif jc.get("module"):
+            judge_info[jname] = ("code", "—")
+
     html = "<h2>Scoring Summary</h2>\n<table>\n"
-    html += f"<tr><th>Judge</th><th>Metric</th><th>Value</th>"
+    html += f"<tr><th>Judge</th><th>Type</th><th>Metric</th><th>Value</th>"
     if has_bl:
         html += "<th>Baseline</th>"
     html += "<th>Threshold</th><th>Status</th></tr>\n"
@@ -354,7 +366,10 @@ def _render_scoring_summary(summary, config, baseline_summary=None):
                 status_cls = "pass" if ok else "fail"
                 status_label = "PASS" if ok else "FAIL"
 
+        jtype, jmodel = judge_info.get(judge_name, ("—", "—"))
+        type_label = jtype if jtype == "check" else f'{jtype} ({jmodel.split("@")[0]})'
         html += f'<tr class="metric-row"><td>{_esc(judge_name)}</td>'
+        html += f'<td style="font-size:0.85em">{_esc(type_label)}</td>'
         html += f"<td>{metric_name}</td><td>{metric_val}</td>"
         if has_bl:
             html += f"<td>{bl_val}</td>"
