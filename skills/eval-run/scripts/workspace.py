@@ -259,6 +259,20 @@ def _setup_tool_hooks(workspace, config):
             }],
         })
 
+    # Carry over permissions from the project's settings.json so the skill
+    # retains its allowed tool patterns in the workspace (headless --print
+    # mode still requires explicit permission for Bash commands, etc.)
+    project_settings = Path.cwd() / ".claude" / "settings.json"
+    if project_settings.exists():
+        try:
+            with open(project_settings) as f:
+                proj = _json.load(f)
+            proj_perms = proj.get("permissions", {})
+            if proj_perms.get("allow"):
+                settings.setdefault("permissions", {})["allow"] = proj_perms["allow"]
+        except (_json.JSONDecodeError, OSError):
+            pass
+
     with open(settings_dir / "settings.json", "w") as f:
         _json.dump(settings, f, indent=2)
 
