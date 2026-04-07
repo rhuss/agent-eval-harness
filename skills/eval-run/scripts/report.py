@@ -237,6 +237,7 @@ def _render_run_config(run_result, baseline_result=None):
     has_bl = baseline_result is not None
     fields = [
         ("Model", "model"),
+        ("Subagent Model", "subagent_model"),
         ("Agent", "agent"),
         ("Duration", "duration_s"),
         ("Cost", "cost_usd"),

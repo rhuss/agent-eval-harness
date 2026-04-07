@@ -108,13 +108,19 @@ def main():
     if result.stderr:
         (output_dir / "stderr.log").write_text(result.stderr)
 
+    # Extract the full model ID from the result event if available
+    full_model = args.model
+    if result.raw_output and isinstance(result.raw_output, dict):
+        full_model = result.raw_output.get("model", args.model)
+
     run_meta = {
         "exit_code": result.exit_code,
         "duration_s": round(result.duration_s, 1),
         "token_usage": result.token_usage,
         "cost_usd": result.cost_usd,
         "num_turns": result.num_turns,
-        "model": args.model,
+        "model": full_model,
+        "subagent_model": args.subagent_model or "",
         "agent": runner.name,
     }
     with open(output_dir / "run_result.json", "w") as f:
