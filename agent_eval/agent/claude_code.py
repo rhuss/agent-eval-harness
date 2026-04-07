@@ -185,11 +185,21 @@ class ClaudeCodeRunner(EvalRunner):
                 "cache_read": total_cache_read,
                 "cache_create": total_cache_create,
             }
-        # Cost and turns from the last result event (cumulative in Claude Code)
-        num_turns = None
+        # Cost from the last result event (cumulative in Claude Code).
+        # Turns: sum across all result events — background agents each
+        # report their own turn count separately from the main process.
+        num_turns = 0
+        for line in stdout_lines:
+            try:
+                obj = json.loads(line)
+                if obj.get("type") == "result":
+                    num_turns += obj.get("num_turns", 0)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        num_turns = num_turns or None
+        cost_usd = None
         if isinstance(result_obj, dict):
             cost_usd = result_obj.get("total_cost_usd")
-            num_turns = result_obj.get("num_turns")
 
         return RunResult(
             exit_code=proc.returncode,
