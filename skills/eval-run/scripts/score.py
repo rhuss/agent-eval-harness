@@ -358,7 +358,7 @@ def _make_anthropic_llm_judge(name, prompt):
             rendered_prompt = rendered_prompt.replace("{{ outputs }}", output_text)
 
         # Use the best available model; fall back through options
-        judge_model = os.environ.get("EVAL_JUDGE_MODEL", "claude-3-5-haiku@20241022")
+        judge_model = os.environ.get("EVAL_JUDGE_MODEL", "claude-sonnet-4-6@20250514")
         response = client.messages.create(
             model=judge_model,
             max_tokens=1024,
@@ -369,19 +369,28 @@ def _make_anthropic_llm_judge(name, prompt):
         text = response.content[0].text.strip()
         # Extract score from JSON response
         try:
-            # Try parsing as JSON
-            match = re.search(r'\{[^{}]*"score"\s*:\s*(\d+)[^{}]*\}', text, re.DOTALL)
+            # Try parsing as JSON — search for {"score": N} anywhere
+            match = re.search(r'"score"\s*:\s*(\d+)', text)
             if match:
                 score_val = int(match.group(1))
                 rationale_match = re.search(r'"rationale"\s*:\s*"([^"]*)"', text)
-                rationale = rationale_match.group(1) if rationale_match else text
+                rationale = rationale_match.group(1) if rationale_match else text[:200]
                 return (score_val, rationale)
         except (ValueError, AttributeError):
             pass
-        # Fallback: try to find a number
+        # Fallback: find "Score: N" or "Overall: N" or "N/5" patterns
+        explicit = re.search(
+            r'(?:overall|score|rating)\s*[=:]\s*(\d)\b'
+            r'|(\d)\s*/\s*5'
+            r'|\*\*(\d)\*\*\s*/\s*5',
+            text, re.IGNORECASE)
+        if explicit:
+            score_val = int(next(g for g in explicit.groups() if g))
+            return (score_val, text[:200])
+        # Last resort: find the last standalone 1-5 digit (conclusion is at end)
         nums = re.findall(r'\b([1-5])\b', text)
         if nums:
-            return (int(nums[0]), text[:200])
+            return (int(nums[-1]), text[:200])
         return (3, f"Could not parse score from: {text[:200]}")
 
     return scorer
