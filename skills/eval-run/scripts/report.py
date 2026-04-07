@@ -671,12 +671,30 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
         case_dir = cases_dir / case_id
         label = case_id
 
-        # Count pass/fail
-        passed = sum(1 for r in case_results.values()
-                     if isinstance(r, dict) and r.get("value") is True)
-        failed = sum(1 for r in case_results.values()
-                     if isinstance(r, dict) and r.get("value") is False)
+        # Count pass/fail — bool judges: True=pass, False=fail
+        # Numeric judges (LLM): pass if score >= threshold min_mean
+        thresholds = config.get("thresholds", {})
+        passed = 0
+        failed = 0
         total = len(case_results)
+        for jname, r in case_results.items():
+            if not isinstance(r, dict):
+                continue
+            val = r.get("value")
+            if val is True:
+                passed += 1
+            elif val is False:
+                failed += 1
+            elif isinstance(val, (int, float)):
+                thresh = thresholds.get(jname, {})
+                min_mean = thresh.get("min_mean") if isinstance(thresh, dict) else None
+                if min_mean is not None:
+                    if val >= min_mean:
+                        passed += 1
+                    else:
+                        failed += 1
+                else:
+                    passed += 1  # no threshold defined, count as pass
         status = "pass" if failed == 0 else "fail"
 
         html += (f'<details open class="case"><summary>'
@@ -697,7 +715,12 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
             elif val is False:
                 val_html = '<span class="fail">FAIL</span>'
             elif isinstance(val, (int, float)):
-                val_html = str(val)
+                thresh = thresholds.get(jname, {})
+                min_mean = thresh.get("min_mean") if isinstance(thresh, dict) else None
+                if min_mean is not None and val < min_mean:
+                    val_html = f'<span class="fail">{val}</span>'
+                else:
+                    val_html = f'<span class="pass">{val}</span>'
             else:
                 val_html = _esc(str(val)[:100])
 
