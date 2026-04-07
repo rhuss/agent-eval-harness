@@ -115,6 +115,25 @@ Pass `--agent` with the `runner` value from eval.yaml (default: `claude-code`).
 
 The `--skill-args` value is the argument string for the skill invocation (e.g., `"--input batch.yaml --headless"`). If omitted, execute.py uses the `arguments` field from eval.yaml. Override via CLI only when testing different argument combinations.
 
+### Monitoring Progress
+
+Skill execution can take minutes to hours. Run execute.py in the background and monitor progress by tailing its output file. Report what you see to the user — which phase the pipeline is in, how many agents are running, what's completing. This keeps the user informed and helps diagnose hangs early.
+
+```bash
+# Check progress (repeat periodically)
+tail -20 <output_file>
+```
+
+Look for phase markers (`## Phase`, `## Step`, `Batch N/M`), agent counts (`N agents launched`, `N/M done`), and completion signals (`Done`). Summarize concisely — e.g., "Batch 2/4: review agents 3/5 complete" rather than dumping raw output.
+
+**Detecting problems**: If the last lines haven't changed across two checks (~2-3 min apart), the pipeline may be stuck. Common signs:
+- Repeated `sleep` commands with no progress change → agents may have timed out or crashed
+- `ERROR` or `Traceback` in the output → script failure, report immediately
+- No new output for 5+ minutes → possible hang, check if the process is still running
+- `exit code` or `EXIT:` appearing → execution finished (check the code)
+
+When you spot an issue, report it to the user with the relevant output lines rather than waiting for completion.
+
 After execution, check the result:
 
 ```bash
