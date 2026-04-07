@@ -189,6 +189,8 @@ def load_judges(config, project_root=None):
     """
     judges = []
     for jc in config.judges:
+        if jc.name == "pairwise":
+            continue  # Pairwise is only used by score.py pairwise, not regular scoring
         if jc.check:
             scorer = _make_inline_check(jc)
         elif jc.prompt or jc.prompt_file:
