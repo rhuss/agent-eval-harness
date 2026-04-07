@@ -583,13 +583,65 @@ def _md_table_to_html(table_lines):
     return html
 
 
+def _shared_output_paths(config):
+    """Return set of output paths with batch_pattern '*' (shared across cases)."""
+    return {o.get("path") for o in config.get("outputs", [])
+            if o.get("batch_pattern") == "*" and o.get("path")}
+
+
+def _render_shared_outputs(run_dir, config):
+    """Render shared output files (batch_pattern='*') once before per-case."""
+    shared_paths = _shared_output_paths(config)
+    if not shared_paths:
+        return ""
+
+    cases_dir = run_dir / "cases"
+    if not cases_dir.exists():
+        return ""
+
+    # Read shared files from the first case directory
+    first_case = next((d for d in sorted(cases_dir.iterdir()) if d.is_dir()), None)
+    if not first_case:
+        return ""
+
+    html = "<h2>Shared Outputs</h2>\n"
+    html += '<p class="skip">These files are shared across all cases (not repeated per-case below).</p>\n'
+    for out_path in sorted(shared_paths):
+        shared_dir = first_case / out_path
+        if not shared_dir.exists():
+            continue
+        files = sorted(f for f in shared_dir.rglob("*") if f.is_file())
+        for f in files:
+            rel = f.relative_to(first_case)
+            if f.suffix == ".html":
+                try:
+                    html_content = f.read_text()
+                    srcdoc = html_content.replace("&", "&amp;").replace('"', "&quot;")
+                    html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                             f'<iframe class="html-preview" srcdoc="{srcdoc}" '
+                             f'sandbox="allow-same-origin" '
+                             f'onload="this.style.height=this.contentDocument.documentElement.scrollHeight+20+\'px\'"'
+                             f'></iframe>\n')
+                except (UnicodeDecodeError, OSError):
+                    html += (f'<div class="file-badge">{_esc(str(rel))} '
+                             f'<span class="skip">(could not read)</span></div>\n')
+            else:
+                content = _read_text(f, max_lines=200)
+                if content:
+                    html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                             f'<pre class="output">{_esc(content)}</pre>\n')
+    return html
+
+
 def _render_per_case(summary, run_dir, config, baseline_dir, review):
     per_case = summary.get("per_case", {})
     if not per_case:
         return ""
 
     dataset_path = config.get("dataset", {}).get("path", "")
-    output_paths = [o.get("path", ".") for o in config.get("outputs", []) if o.get("path")]
+    shared_paths = _shared_output_paths(config)
+    output_paths = [o.get("path", ".") for o in config.get("outputs", [])
+                    if o.get("path") and o.get("path") not in shared_paths]
     feedback = review.get("feedback", {}) if review else {}
     cases_dir = run_dir / "cases"
     bl_cases_dir = baseline_dir / "cases" if baseline_dir else None
@@ -657,9 +709,11 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                 html += (f'<details open><summary>Input</summary>'
                          f'<pre class="output">{_esc(input_text)}</pre></details>\n')
 
-        # Output files
+        # Output files (skip shared outputs — rendered separately above)
         if case_dir.exists():
-            files = sorted(f for f in case_dir.rglob("*") if f.is_file())
+            files = sorted(f for f in case_dir.rglob("*") if f.is_file()
+                           and not any(str(f.relative_to(case_dir)).startswith(sp)
+                                       for sp in shared_paths))
             if files:
                 html += "<details open><summary>Output files</summary>\n"
                 for f in files:
@@ -751,6 +805,7 @@ def generate_report(config, summary, run_result, run_dir,
     html += _render_regressions(summary, config)
     html += _render_pairwise(summary)
     html += _render_analysis(run_dir)
+    html += _render_shared_outputs(run_dir, config)
     html += _render_per_case(summary, run_dir, config, baseline_dir, review)
     html += "\n</body>\n</html>\n"
     return html
