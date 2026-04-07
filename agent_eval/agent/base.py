@@ -20,6 +20,7 @@ class RunResult:
     duration_s: float
     token_usage: Optional[dict] = None  # {"input": N, "output": N}
     cost_usd: Optional[float] = None
+    num_turns: Optional[int] = None
     raw_output: Optional[dict] = None  # Runner-specific parsed output
 
 

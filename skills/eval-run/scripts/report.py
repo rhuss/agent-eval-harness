@@ -240,6 +240,7 @@ def _render_run_config(run_result, baseline_result=None):
         ("Agent", "agent"),
         ("Duration", "duration_s"),
         ("Cost", "cost_usd"),
+        ("Turns", "num_turns"),
         ("Exit Code", "exit_code"),
     ]
 

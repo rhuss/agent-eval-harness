@@ -185,9 +185,11 @@ class ClaudeCodeRunner(EvalRunner):
                 "cache_read": total_cache_read,
                 "cache_create": total_cache_create,
             }
-        # Cost from the last result event (cumulative in Claude Code)
+        # Cost and turns from the last result event (cumulative in Claude Code)
+        num_turns = None
         if isinstance(result_obj, dict):
             cost_usd = result_obj.get("total_cost_usd")
+            num_turns = result_obj.get("num_turns")
 
         return RunResult(
             exit_code=proc.returncode,
@@ -196,6 +198,7 @@ class ClaudeCodeRunner(EvalRunner):
             duration_s=duration,
             token_usage=token_usage,
             cost_usd=cost_usd,
+            num_turns=num_turns,
             raw_output=raw_output,
         )
 

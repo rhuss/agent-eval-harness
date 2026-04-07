@@ -113,6 +113,7 @@ def main():
         "duration_s": round(result.duration_s, 1),
         "token_usage": result.token_usage,
         "cost_usd": result.cost_usd,
+        "num_turns": result.num_turns,
         "model": args.model,
         "agent": runner.name,
     }
