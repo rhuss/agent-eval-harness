@@ -214,7 +214,7 @@ details.case > summary:hover { color: #2563eb; }
 .diff-table tr.hdr td { background: #f0f0f0; color: #666; font-weight: bold; }
 .diff-table .wdel { background: #fdb8c0; border-radius: 2px; }
 .diff-table .wadd { background: #acf2bd; border-radius: 2px; }
-pre.output { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 0.8em; font-size: 0.82em; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
+pre.output { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 0.8em; font-size: 0.92em; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
 .html-preview { width: 100%; border: 1px solid #d0d0d0; border-radius: 4px; margin: 0.5em 0; background: #fff; }
 .analysis { background: #f8fafc; border: 1px solid #d0dae8; border-radius: 8px; padding: 1.2em; margin: 1.5em 0; }
 .analysis h2 { margin-top: 0; }
@@ -435,7 +435,7 @@ def _render_analysis(run_dir):
     if not content:
         return ""
 
-    return '<div class="analysis">\n' + _md_to_html(content) + "\n</div>\n"
+    return _md_to_html(content)
 
 
 def _md_to_html(md_text):
@@ -488,20 +488,20 @@ def _md_to_html(md_text):
             out.append(_md_table_to_html(table_lines))
             continue
 
-        # Headers
+        # Headers — # maps to h1, ## to h2, ### to h3
         if stripped.startswith("### "):
             _close_lists()
-            out.append(f"<h4>{_inline(stripped[4:])}</h4>")
+            out.append(f"<h3>{_inline(stripped[4:])}</h3>")
             i += 1
             continue
         if stripped.startswith("## "):
             _close_lists()
-            out.append(f"<h3>{_inline(stripped[3:])}</h3>")
+            out.append(f"<h2>{_inline(stripped[3:])}</h2>")
             i += 1
             continue
         if stripped.startswith("# "):
             _close_lists()
-            out.append(f"<h2>{_inline(stripped[2:])}</h2>")
+            out.append(f"<h1>{_inline(stripped[2:])}</h1>")
             i += 1
             continue
 
