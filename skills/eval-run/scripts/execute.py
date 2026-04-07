@@ -122,6 +122,7 @@ def main():
         "model": full_model,
         "subagent_model": args.subagent_model or "",
         "agent": runner.name,
+        "agent_version": getattr(runner, "version", ""),
     }
     with open(output_dir / "run_result.json", "w") as f:
         json.dump(run_meta, f, indent=2)

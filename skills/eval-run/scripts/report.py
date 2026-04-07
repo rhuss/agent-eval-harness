@@ -239,6 +239,7 @@ def _render_run_config(run_result, baseline_result=None):
         ("Model", "model"),
         ("Subagent Model", "subagent_model"),
         ("Agent", "agent"),
+        ("Agent Version", "agent_version"),
         ("Duration", "duration_s"),
         ("Cost", "cost_usd"),
         ("Turns", "num_turns"),

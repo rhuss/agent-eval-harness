@@ -41,6 +41,16 @@ class ClaudeCodeRunner(EvalRunner):
     def name(self) -> str:
         return "claude-code"
 
+    @property
+    def version(self) -> str:
+        """Get the Claude Code CLI version."""
+        try:
+            result = subprocess.run(
+                ["claude", "--version"], capture_output=True, text=True, timeout=5)
+            return result.stdout.strip() if result.returncode == 0 else ""
+        except Exception:
+            return ""
+
     def run_skill(
         self,
         skill_name: str,
