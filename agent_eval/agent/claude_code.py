@@ -14,7 +14,12 @@ _print_lock = threading.Lock()
 
 
 def _extract_usage(stdout_lines):
-    """Extract token usage, cost, and turns from stream-json result events."""
+    """Extract token usage, cost, and turns from stream-json events.
+
+    - Turns and tokens: summed from assistant events (each is one API turn,
+      includes inline Skill calls and all subagent processes).
+    - Cost: from the last result event (cumulative in Claude Code).
+    """
     total_input = 0
     total_output = 0
     total_cache_read = 0
@@ -24,16 +29,17 @@ def _extract_usage(stdout_lines):
     for line in stdout_lines:
         try:
             obj = json.loads(line)
-            if obj.get("type") == "result":
-                u = obj.get("usage", {})
-                total_input += u.get("input_tokens", 0)
-                total_output += u.get("output_tokens", 0)
-                total_cache_read += u.get("cache_read_input_tokens", 0)
-                total_cache_create += u.get("cache_creation_input_tokens", 0)
-                num_turns += obj.get("num_turns", 0)
-                cost_usd = obj.get("total_cost_usd", cost_usd)
         except (json.JSONDecodeError, ValueError):
-            pass
+            continue
+        if obj.get("type") == "assistant":
+            num_turns += 1
+            u = obj.get("message", {}).get("usage", {})
+            total_input += u.get("input_tokens", 0)
+            total_output += u.get("output_tokens", 0)
+            total_cache_read += u.get("cache_read_input_tokens", 0)
+            total_cache_create += u.get("cache_creation_input_tokens", 0)
+        elif obj.get("type") == "result":
+            cost_usd = obj.get("total_cost_usd", cost_usd)
     token_usage = None
     if total_input or total_output:
         token_usage = {
