@@ -215,7 +215,7 @@ details.case > summary:hover { color: #2563eb; }
 .diff-table .wdel { background: #fdb8c0; border-radius: 2px; }
 .diff-table .wadd { background: #acf2bd; border-radius: 2px; }
 pre.output { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 0.8em; font-size: 0.92em; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
-.html-preview { width: 100%; border: 1px solid #d0d0d0; border-radius: 4px; margin: 0.5em 0; background: #fff; }
+.html-preview { width: 100%; height: 80vh; max-height: 2000px; border: 1px solid #d0d0d0; border-radius: 4px; margin: 0.5em 0; background: #fff; }
 .analysis { background: #f8fafc; border: 1px solid #d0dae8; border-radius: 8px; padding: 1.2em; margin: 1.5em 0; }
 .analysis h2 { margin-top: 0; }
 .analysis h3 { margin-top: 1em; color: #334155; }
@@ -652,10 +652,13 @@ def _render_shared_outputs(run_dir, config):
     html = "<h2>Shared Outputs</h2>\n"
     html += '<p class="skip">These files are shared across all cases (not repeated per-case below).</p>\n'
     for out_path in sorted(shared_paths):
-        shared_dir = first_case / out_path
-        if not shared_dir.exists():
+        shared_entry = first_case / out_path
+        if not shared_entry.exists():
             continue
-        files = sorted(f for f in shared_dir.rglob("*") if f.is_file())
+        if shared_entry.is_file():
+            files = [shared_entry]
+        else:
+            files = sorted(f for f in shared_entry.rglob("*") if f.is_file())
         for f in files:
             rel = f.relative_to(first_case)
             if f.suffix == ".html":
@@ -664,8 +667,7 @@ def _render_shared_outputs(run_dir, config):
                     srcdoc = html_content.replace("&", "&amp;").replace('"', "&quot;")
                     html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
                              f'<iframe class="html-preview" srcdoc="{srcdoc}" '
-                             f'sandbox="allow-same-origin" '
-                             f'onload="this.style.height=this.contentDocument.documentElement.scrollHeight+20+\'px\'"'
+                             f'sandbox="allow-same-origin"'
                              f'></iframe>\n')
                 except (UnicodeDecodeError, OSError):
                     html += (f'<div class="file-badge">{_esc(str(rel))} '
@@ -736,16 +738,17 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                     passed += 1  # no threshold defined, count as pass
         status = "pass" if failed == 0 else "fail"
 
-        # Pairwise badge
+        # Pairwise badge or pass/fail background
         pw_badge = ""
-        pw_bg = ""
         if case_id in pw_by_case:
             pw_winner = pw_by_case[case_id]
             pw_badge = f" {_pairwise_badge(pw_winner)}"
             pw_colors = {"A": "#d4edda", "B": "#f8d7da", "tie": "#fff3cd", "error": "#fafafa"}
-            pw_bg = f' style="background:{pw_colors.get(pw_winner, "")}"'
+            bg = pw_colors.get(pw_winner, "")
+        else:
+            bg = "#d4edda" if status == "pass" else "#f8d7da"
 
-        html += (f'<details open class="case"{pw_bg}><summary>'
+        html += (f'<details open class="case" style="background:{bg}"><summary>'
                  f'<span class="{status}">{label}</span> '
                  f'<span class="skip">({passed}/{total} pass)</span>'
                  f'{pw_badge}</summary>\n')
