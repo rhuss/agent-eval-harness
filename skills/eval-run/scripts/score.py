@@ -664,16 +664,21 @@ def cmd_judges(args):
     _merge_summary(args.run_id, "per_case", judge_results.get("per_case", {}), runs_dir)
 
     # Regression detection
+    has_regressions = False
     if config.thresholds:
         current_agg = judge_results.get("aggregated", {})
         regressions = detect_regressions(current_agg, config.thresholds)
         if regressions:
+            has_regressions = True
             print(f"\n  REGRESSIONS: {len(regressions)} detected")
             for r in regressions:
                 print(f"    [{r.judge_name}] {r.metric}: "
                       f"{r.baseline_value} -> {r.current_value}")
         else:
             print("\n  REGRESSIONS: 0")
+
+    if has_regressions:
+        sys.exit(1)
 
 
 def cmd_pairwise(args):
