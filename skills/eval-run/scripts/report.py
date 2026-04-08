@@ -374,6 +374,32 @@ def _render_scoring_summary(summary, config, baseline_summary=None):
         html += f'<td>{thresh_str}</td>'
         html += f'<td class="{status_cls}">{status_label}</td></tr>\n'
 
+    # Pairwise summary row (if available)
+    pw = summary.get("pairwise")
+    if pw and not pw.get("error"):
+        wins_a = pw.get("wins_a", 0)
+        wins_b = pw.get("wins_b", 0)
+        ties = pw.get("ties", 0)
+        errors = pw.get("errors", 0)
+        total = wins_a + wins_b + ties + errors
+        pw_val = f"{wins_a}W / {wins_b}L / {ties}T"
+        if errors:
+            pw_val += f" / {errors}E"
+        if wins_a > wins_b:
+            pw_status_cls, pw_status = "pass", "WIN"
+        elif wins_b > wins_a:
+            pw_status_cls, pw_status = "fail", "LOSS"
+        else:
+            pw_status_cls, pw_status = "skip", "TIE"
+        pw_jc = next((j for j in config.get("judges", []) if j.get("name") == "pairwise"), {})
+        pw_model = pw_jc.get("model") or default_model
+        html += (f'<tr class="metric-row"><td>pairwise</td>'
+                 f'<td style="font-size:0.85em">llm ({pw_model.split("@")[0]})</td>'
+                 f'<td>comparison</td><td>{pw_val}</td>')
+        if has_bl:
+            html += "<td>—</td>"
+        html += f'<td>—</td><td class="{pw_status_cls}">{pw_status}</td></tr>\n'
+
     html += "</table>\n"
     return html
 
@@ -659,6 +685,12 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
     cases_dir = run_dir / "cases"
     bl_cases_dir = baseline_dir / "cases" if baseline_dir else None
 
+    # Build pairwise lookup per case
+    pw_by_case = {}
+    pw = summary.get("pairwise", {})
+    for pc in pw.get("per_case", []):
+        pw_by_case[pc.get("case_id", "")] = pc.get("winner", "error")
+
     html = "<h2>Per-Case Details</h2>\n"
     if baseline_dir:
         html += (f"<p>Comparing <strong>{run_dir.name}</strong> vs "
@@ -698,9 +730,19 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                     passed += 1  # no threshold defined, count as pass
         status = "pass" if failed == 0 else "fail"
 
-        html += (f'<details open class="case"><summary>'
+        # Pairwise badge
+        pw_badge = ""
+        pw_bg = ""
+        if case_id in pw_by_case:
+            pw_winner = pw_by_case[case_id]
+            pw_badge = f" {_pairwise_badge(pw_winner)}"
+            pw_colors = {"A": "#d4edda", "B": "#f8d7da", "tie": "#fff3cd", "error": "#fafafa"}
+            pw_bg = f' style="background:{pw_colors.get(pw_winner, "")}"'
+
+        html += (f'<details open class="case"{pw_bg}><summary>'
                  f'<span class="{status}">{label}</span> '
-                 f'<span class="skip">({passed}/{total} pass)</span></summary>\n')
+                 f'<span class="skip">({passed}/{total} pass)</span>'
+                 f'{pw_badge}</summary>\n')
 
         # Judge results table
         html += '<table><tr><th>Judge</th><th>Value</th><th>Rationale</th></tr>\n'
@@ -839,7 +881,6 @@ def generate_report(config, summary, run_result, run_dir,
     html += _render_run_config(run_result, baseline_result)
     html += _render_scoring_summary(summary, config, baseline_summary)
     html += _render_regressions(summary, config)
-    html += _render_pairwise(summary)
     html += _render_analysis(run_dir)
     html += _render_shared_outputs(run_dir, config)
     html += _render_per_case(summary, run_dir, config, baseline_dir, review)
