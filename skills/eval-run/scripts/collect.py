@@ -60,15 +60,21 @@ def main():
         cid = entry["case_id"] if isinstance(entry, dict) else entry
         _safe_path_component(cid, "case_id")
 
-    # Collect from each output directory defined in config
+    # Collect from each output path defined in config (directory or file)
     for output_cfg in config.outputs:
         out_path = _safe_path_component(output_cfg.path or ".", "output path")
-        src_dir = workspace / out_path
-        if not src_dir.exists():
+        src = workspace / out_path
+        if not src.exists():
             continue
 
-        # Get all files in the output directory (including subdirs)
-        files = sorted(f for f in src_dir.rglob("*") if f.is_file())
+        # Handle single-file output paths
+        if src.is_file():
+            files = [src]
+            src_dir = src.parent
+        else:
+            src_dir = src
+            # Get all files in the output directory (including subdirs)
+            files = sorted(f for f in src_dir.rglob("*") if f.is_file())
         if not files:
             continue
 
