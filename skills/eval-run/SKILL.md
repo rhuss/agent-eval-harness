@@ -17,6 +17,7 @@ Parse `$ARGUMENTS`:
 |----------|----------|---------|-------------|
 | config (positional) | no | `eval.yaml` | Path to eval config |
 | `--model <model>` | **yes** | — | Model to use for execution |
+| `--subagent-model <model>` | no | same as model | Model for subagents (e.g., `sonnet` while main is `opus`) |
 | `--skill <name>` | no | from config | Override the skill to test |
 | `--run-id <id>` | no | `YYYY-MM-DD-<model>` | Identifier for this run |
 | `--case <filter>` | no | all cases | Substring match to select cases |
