@@ -267,23 +267,29 @@ def _render_run_config(run_result, baseline_result=None):
             html += f"<td>{_esc(str(bl_val))}</td>"
         html += "</tr>\n"
 
-    # Token usage — show input/output separately from cache
+    # Token usage — show input/output separately from cache with hit rate
     tokens = run_result.get("token_usage", {})
     if tokens:
         t_str = f"in: {tokens.get('input', 0):,} | out: {tokens.get('output', 0):,}"
-        if tokens.get("cache_read"):
-            t_str += f" | cache read: {tokens['cache_read']:,}"
-        if tokens.get("cache_create"):
-            t_str += f" | cache write: {tokens['cache_create']:,}"
+        cache_r = tokens.get("cache_read", 0)
+        cache_w = tokens.get("cache_create", 0)
+        if cache_r or cache_w:
+            total_in = tokens.get("input", 0) + cache_r + cache_w
+            hit_rate = cache_r / total_in if total_in else 0
+            t_str += f" | cache read: {cache_r:,} | cache write: {cache_w:,}"
+            t_str += f" ({hit_rate:.0%} hit)"
         bl_t_str = ""
         if has_bl:
             bl_tokens = baseline_result.get("token_usage", {})
             if bl_tokens:
                 bl_t_str = f"in: {bl_tokens.get('input', 0):,} | out: {bl_tokens.get('output', 0):,}"
-                if bl_tokens.get("cache_read"):
-                    bl_t_str += f" | cache read: {bl_tokens['cache_read']:,}"
-                if bl_tokens.get("cache_create"):
-                    bl_t_str += f" | cache write: {bl_tokens['cache_create']:,}"
+                bl_cr = bl_tokens.get("cache_read", 0)
+                bl_cw = bl_tokens.get("cache_create", 0)
+                if bl_cr or bl_cw:
+                    bl_total_in = bl_tokens.get("input", 0) + bl_cr + bl_cw
+                    bl_hit = bl_cr / bl_total_in if bl_total_in else 0
+                    bl_t_str += f" | cache read: {bl_cr:,} | cache write: {bl_cw:,}"
+                    bl_t_str += f" ({bl_hit:.0%} hit)"
         html += f"<tr><th>Tokens</th><td>{t_str}</td>"
         if has_bl:
             html += f"<td>{bl_t_str}</td>"
