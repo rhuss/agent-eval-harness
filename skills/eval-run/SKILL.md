@@ -118,7 +118,9 @@ The `--skill-args` value is the argument string for the skill invocation (e.g., 
 
 ### Monitoring Progress
 
-Skill execution can take minutes to hours. Run execute.py in the background and monitor progress by tailing its output file. Report what you see to the user — which phase the pipeline is in, how many agents are running, what's completing. This keeps the user informed and helps diagnose hangs early.
+Skill execution can take minutes to hours. Launch execute.py using the Bash tool with `run_in_background: true`. **Do NOT pipe the command** through `tail`, `head`, `grep`, or any other filter — piping buffers all output and prevents progress monitoring. The command must be the bare `python3 ... execute.py ...` invocation with no pipes.
+
+Once launched, the Bash tool returns an output file path. Monitor progress by reading that file periodically:
 
 ```bash
 # Check progress (repeat periodically)
