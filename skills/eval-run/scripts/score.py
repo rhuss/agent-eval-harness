@@ -15,6 +15,7 @@ import argparse
 import importlib
 import json
 import os
+import re
 import sys
 import textwrap
 import threading
@@ -534,17 +535,31 @@ def _get_anthropic_client():
 def _call_judge(client, system_prompt, user_message, model):
     try:
         response = client.messages.create(
-            model=model, max_tokens=1024,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+            model=model, max_tokens=4096,
+            system=("You are a judge comparing two outputs. Be concise in your reasoning. "
+                    "You MUST end your response with a JSON object containing "
+                    "a 'preferred' field set to 'A', 'B', or 'tie'. "
+                    "Example: {\"reasoning\": \"...\", \"preferred\": \"A\"}"),
+            messages=[
+                {"role": "user", "content": f"{system_prompt}\n\n{user_message}"},
+            ],
         )
         text = response.content[0].text
-        json_text = text
-        if "```json" in json_text:
-            json_text = json_text.split("```json")[1].split("```")[0]
-        elif "```" in json_text:
-            json_text = json_text.split("```")[1].split("```")[0]
-        return json.loads(json_text.strip()), None
+        # Try extracting JSON from code blocks first
+        if "```json" in text:
+            json_text = text.split("```json")[1].split("```")[0]
+        elif "```" in text:
+            json_text = text.split("```")[1].split("```")[0]
+        else:
+            json_text = text
+        try:
+            return json.loads(json_text.strip()), None
+        except json.JSONDecodeError:
+            # Fallback: find the last JSON object in the text
+            match = re.search(r'\{[^{}]*"preferred"[^{}]*\}', text, re.DOTALL)
+            if match:
+                return json.loads(match.group()), None
+            return None, f"Could not parse JSON from response: {text[:200]}"
     except Exception as e:
         return None, str(e)
 
