@@ -22,6 +22,7 @@ class RunResult:
     cost_usd: Optional[float] = None
     num_turns: Optional[int] = None
     resolved_model: Optional[str] = None  # Full model ID from runtime
+    models_used: Optional[list] = None   # All distinct models observed
     raw_output: Optional[dict] = None  # Runner-specific parsed output
 
 

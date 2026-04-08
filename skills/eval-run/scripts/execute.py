@@ -114,6 +114,10 @@ def main():
         (output_dir / "stderr.log").write_text(result.stderr)
 
     full_model = result.resolved_model or args.model
+    # Subagent models: from stream events (actual), or CLI flag, or same as main
+    models_used = result.models_used or []
+    subagent_models = [m for m in models_used if m != full_model]
+    subagent_model_str = ", ".join(subagent_models) if subagent_models else full_model
 
     run_meta = {
         "exit_code": result.exit_code,
@@ -122,7 +126,7 @@ def main():
         "cost_usd": result.cost_usd,
         "num_turns": result.num_turns,
         "model": full_model,
-        "subagent_model": args.subagent_model or full_model,
+        "subagent_model": subagent_model_str,
         "agent": runner.name,
         "agent_version": getattr(runner, "version", ""),
     }

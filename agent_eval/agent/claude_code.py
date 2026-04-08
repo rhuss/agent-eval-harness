@@ -14,11 +14,12 @@ _print_lock = threading.Lock()
 
 
 def _extract_usage(stdout_lines):
-    """Extract token usage, cost, and turns from stream-json events.
+    """Extract token usage, cost, turns, and models from stream-json events.
 
     - Turns and tokens: summed from assistant events (each is one API turn,
       includes inline Skill calls and all subagent processes).
     - Cost: from the last result event (cumulative in Claude Code).
+    - Models: all distinct models observed in assistant events.
     """
     total_input = 0
     total_output = 0
@@ -26,6 +27,7 @@ def _extract_usage(stdout_lines):
     total_cache_create = 0
     num_turns = 0
     cost_usd = None
+    models_seen = set()
     for line in stdout_lines:
         try:
             obj = json.loads(line)
@@ -38,6 +40,9 @@ def _extract_usage(stdout_lines):
             total_output += u.get("output_tokens", 0)
             total_cache_read += u.get("cache_read_input_tokens", 0)
             total_cache_create += u.get("cache_creation_input_tokens", 0)
+            model = obj.get("message", {}).get("model")
+            if model:
+                models_seen.add(model)
         elif obj.get("type") == "result":
             cost_usd = obj.get("total_cost_usd", cost_usd)
     token_usage = None
@@ -46,7 +51,7 @@ def _extract_usage(stdout_lines):
             "input": total_input, "output": total_output,
             "cache_read": total_cache_read, "cache_create": total_cache_create,
         }
-    return token_usage, cost_usd, num_turns or None
+    return token_usage, cost_usd, num_turns or None, models_seen
 
 
 class ClaudeCodeRunner(EvalRunner):
@@ -185,7 +190,7 @@ class ClaudeCodeRunner(EvalRunner):
             proc.kill()
             proc.wait()
             duration = time.monotonic() - start
-            token_usage, cost_usd, num_turns = _extract_usage(stdout_lines)
+            token_usage, cost_usd, num_turns, models_seen = _extract_usage(stdout_lines)
             return RunResult(
                 exit_code=-1,
                 stdout="\n".join(stdout_lines),
@@ -195,6 +200,7 @@ class ClaudeCodeRunner(EvalRunner):
                 cost_usd=cost_usd,
                 num_turns=num_turns,
                 resolved_model=resolved_model,
+                models_used=sorted(models_seen) if models_seen else None,
             )
         except Exception as e:
             duration = time.monotonic() - start
@@ -214,7 +220,7 @@ class ClaudeCodeRunner(EvalRunner):
             except json.JSONDecodeError:
                 pass
 
-        token_usage, cost_usd, num_turns = _extract_usage(stdout_lines)
+        token_usage, cost_usd, num_turns, models_seen = _extract_usage(stdout_lines)
         if not cost_usd and isinstance(result_obj, dict):
             cost_usd = result_obj.get("total_cost_usd")
 
@@ -227,6 +233,7 @@ class ClaudeCodeRunner(EvalRunner):
             cost_usd=cost_usd,
             num_turns=num_turns,
             resolved_model=resolved_model,
+            models_used=sorted(models_seen) if models_seen else None,
             raw_output=raw_output,
         )
 
