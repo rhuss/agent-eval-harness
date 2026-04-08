@@ -113,10 +113,7 @@ def main():
     if result.stderr:
         (output_dir / "stderr.log").write_text(result.stderr)
 
-    # Extract the full model ID from the result event if available
-    full_model = args.model
-    if result.raw_output and isinstance(result.raw_output, dict):
-        full_model = result.raw_output.get("model", args.model)
+    full_model = result.resolved_model or args.model
 
     run_meta = {
         "exit_code": result.exit_code,
@@ -125,7 +122,7 @@ def main():
         "cost_usd": result.cost_usd,
         "num_turns": result.num_turns,
         "model": full_model,
-        "subagent_model": args.subagent_model or "",
+        "subagent_model": args.subagent_model or full_model,
         "agent": runner.name,
         "agent_version": getattr(runner, "version", ""),
     }

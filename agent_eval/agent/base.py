@@ -21,6 +21,7 @@ class RunResult:
     token_usage: Optional[dict] = None  # {"input": N, "output": N}
     cost_usd: Optional[float] = None
     num_turns: Optional[int] = None
+    resolved_model: Optional[str] = None  # Full model ID from runtime
     raw_output: Optional[dict] = None  # Runner-specific parsed output
 
 
