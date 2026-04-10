@@ -87,7 +87,16 @@ def main():
     print(f"Agent: {runner.name} | Model: {args.model}", file=sys.stderr)
     print(f"Workspace: {args.workspace}", file=sys.stderr)
 
-    # Use workspace settings if generated (for tool interception hooks)
+    # Inject MLflow tracing hook into the workspace if experiment is set.
+    # This adds a Stop hook to the *inner* Claude Code session (the one
+    # that executes the skill) so traces are captured per-run — without
+    # touching the outer project's settings.
+    if args.mlflow_experiment:
+        from agent_eval.mlflow.experiment import inject_tracing_hook
+        inject_tracing_hook(args.workspace, project_root=Path.cwd())
+        print(f"MLflow tracing: injected Stop hook into workspace", file=sys.stderr)
+
+    # Use workspace settings if generated (tool interception and/or tracing hooks)
     workspace_settings = Path(args.workspace) / ".claude" / "settings.json"
     settings_path = workspace_settings if workspace_settings.exists() else None
 

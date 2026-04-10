@@ -116,29 +116,9 @@ export AGENT_EVAL_RUNS_DIR=<path>
 
 All harness scripts read this env var. The directory is created automatically by `check_env.py --fix`.
 
-## Step 6: Configure MLflow Autolog (Tracing)
+## Step 6: MLflow Tracing (Automatic)
 
-If `--skip-mlflow` was passed, skip this step.
-
-Set up Claude Code tracing so evaluation runs are automatically traced:
-
-```bash
-python3 -c "
-import os
-from agent_eval.mlflow.experiment import setup_autolog
-tracking_uri = os.environ.get('MLFLOW_TRACKING_URI', 'http://127.0.0.1:5000')
-success = setup_autolog(os.getcwd(), tracking_uri=tracking_uri)
-print('Autolog configured' if success else 'Autolog setup failed — tracing will not be available')
-"
-```
-
-This attempts to create a `Stop` hook in `.claude/settings.json` that captures traces during skill execution. If it fails (e.g., `mlflow autolog claude` command not available), warn but continue — tracing is optional.
-
-Verify the hook was created:
-
-```bash
-test -f .claude/settings.json && echo "Autolog configured" || echo "Autolog not configured (optional)"
-```
+Tracing is configured automatically — `/eval-run` injects the MLflow Stop hook into each eval workspace's `.claude/settings.json` before executing the skill. No setup needed here, and the outer project's settings are never modified.
 
 ## Step 7: Create MLflow Experiment
 
