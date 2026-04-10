@@ -131,7 +131,11 @@ def main():
                         "rationale": str(result.get("rationale", ""))[:500],
                     })
             if table_rows:
-                mlflow.log_table(table_rows, artifact_file="per_case_results.json")
+                # log_table expects a dict of columns, not a list of rows
+                columns = {}
+                for key in table_rows[0]:
+                    columns[key] = [row[key] for row in table_rows]
+                mlflow.log_table(columns, artifact_file="per_case_results.json")
 
         mlflow_run_id = mlflow.active_run().info.run_id
 
