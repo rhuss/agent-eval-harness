@@ -5,6 +5,7 @@ import os
 import subprocess
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -134,9 +135,9 @@ class ClaudeCodeRunner(EvalRunner):
             "--output-format", "stream-json" if self._log_prefix else "json",
             "--max-budget-usd", str(max_budget_usd),
         ]
-        # Keep session transcript when MLflow tracing is enabled
-        if not self._mlflow_experiment:
-            cmd.append("--no-session-persistence")
+        # Session persistence is not needed — traces are created post-hoc
+        # from the stream-json log by /eval-mlflow, not by the Stop hook.
+        cmd.append("--no-session-persistence")
         if self._log_prefix:
             cmd.append("--verbose")
 
@@ -181,18 +182,39 @@ class ClaudeCodeRunner(EvalRunner):
             proc.stdin.write(prompt)
             proc.stdin.close()
 
+            # Inject a synthetic user event so the prompt appears in the
+            # stream-json output.  claude --print doesn't emit the stdin
+            # prompt as an event, so downstream consumers (tracing, MLflow)
+            # would otherwise have no record of the input.
+            if self._log_prefix:
+                ts = (datetime.now(timezone.utc)
+                      .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")
+                prompt_event = json.dumps({
+                    "type": "user",
+                    "message": {"role": "user", "content": prompt},
+                    "timestamp": ts,
+                })
+                stdout_lines.append(prompt_event)
+
             result_obj = None
             resolved_model = None
             for line in proc.stdout:
                 if time.monotonic() > deadline:
                     raise subprocess.TimeoutExpired(cmd, timeout_s)
                 line = line.rstrip("\n")
-                stdout_lines.append(line)
                 if not line.strip():
+                    stdout_lines.append(line)
                     continue
                 if self._log_prefix:
                     try:
                         obj = json.loads(line)
+                        # Inject receive timestamp on events that lack one
+                        # (assistant events) so traces have real wall-clock
+                        # timing for every event.
+                        if "timestamp" not in obj:
+                            obj["timestamp"] = (datetime.now(timezone.utc)
+                                                .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")
+                            line = json.dumps(obj)
                         if (not resolved_model
                                 and obj.get("type") == "system"
                                 and obj.get("subtype") == "init"):
@@ -205,6 +227,7 @@ class ClaudeCodeRunner(EvalRunner):
                             result_obj = obj
                     except json.JSONDecodeError:
                         pass
+                stdout_lines.append(line)
 
             remaining = max(0, deadline - time.monotonic())
             stderr = proc.stderr.read()
