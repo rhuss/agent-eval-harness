@@ -52,9 +52,9 @@ def ensure_server(port: int = 5000) -> bool:
     import urllib.request
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "")
     if tracking_uri and tracking_uri.startswith("http"):
-        url = tracking_uri.rstrip("/") + "/api/2.0/mlflow/experiments/search"
+        url = tracking_uri.rstrip("/") + "/version"
     else:
-        url = f"http://127.0.0.1:{port}/api/2.0/mlflow/experiments/search"
+        url = f"http://127.0.0.1:{port}/version"
     try:
         urllib.request.urlopen(url, timeout=3)
         return True
@@ -62,7 +62,69 @@ def ensure_server(port: int = 5000) -> bool:
         return False
 
 
-def inject_tracing_hook(workspace, project_root=None, tracking_uri=None):
+def inject_tracing_env(workspace, project_root=None, tracking_uri=None,
+                       experiment_name=None):
+    """Set MLflow environment variables in workspace settings WITHOUT the Stop hook.
+
+    Use this for eval runs where subagents would each fire the Stop hook,
+    creating fragmented traces. Instead, traces are created post-hoc by
+    /eval-mlflow from the stream-json log.
+    """
+    import json
+
+    workspace = os.path.realpath(workspace) if isinstance(workspace, str) else workspace
+    claude_dir = os.path.join(str(workspace), ".claude")
+    settings_path = os.path.join(claude_dir, "settings.json")
+
+    # Handle symlinked .claude dir (same logic as inject_tracing_hook)
+    if os.path.islink(claude_dir):
+        link_target = os.path.realpath(claude_dir)
+        os.unlink(claude_dir)
+        os.makedirs(claude_dir, exist_ok=True)
+        if os.path.isdir(link_target):
+            for child in os.listdir(link_target):
+                if child == "settings.json":
+                    continue
+                src = os.path.join(link_target, child)
+                dst = os.path.join(claude_dir, child)
+                if not os.path.exists(dst):
+                    os.symlink(src, dst)
+
+    os.makedirs(claude_dir, exist_ok=True)
+
+    settings = {}
+    if os.path.exists(settings_path) and not os.path.islink(settings_path):
+        try:
+            with open(settings_path) as f:
+                settings = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    elif project_root:
+        proj_settings = os.path.join(str(project_root), ".claude", "settings.json")
+        if os.path.exists(proj_settings):
+            try:
+                with open(proj_settings) as f:
+                    settings = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    # Set env vars only — no Stop hook
+    env = settings.setdefault("environment", {})
+    resolved_uri = (tracking_uri
+                    or os.environ.get("MLFLOW_TRACKING_URI")
+                    or "http://127.0.0.1:5000")
+    env["MLFLOW_TRACKING_URI"] = resolved_uri
+    if experiment_name:
+        env["MLFLOW_EXPERIMENT_NAME"] = experiment_name
+
+    with open(settings_path, "w") as f:
+        json.dump(settings, f, indent=2)
+
+    return settings_path
+
+
+def inject_tracing_hook(workspace, project_root=None, tracking_uri=None,
+                        experiment_name=None):
     """Inject the MLflow Stop hook into a workspace's .claude/settings.json.
 
     Args:
@@ -70,6 +132,8 @@ def inject_tracing_hook(workspace, project_root=None, tracking_uri=None):
         project_root: Path to the outer project (for reading base settings).
         tracking_uri: MLflow tracking URI. If not provided, auto-detected
             from MLFLOW_TRACKING_URI env var or defaults to localhost:5000.
+        experiment_name: MLflow experiment name. If provided, traces are
+            tagged with this experiment instead of the Default experiment.
 
     This is meant for eval workspaces — the inner Claude Code session that
     runs the skill being evaluated.  It must NOT modify the outer project's
@@ -149,6 +213,9 @@ def inject_tracing_hook(workspace, project_root=None, tracking_uri=None):
                     or os.environ.get("MLFLOW_TRACKING_URI")
                     or "http://127.0.0.1:5000")
     env["MLFLOW_TRACKING_URI"] = resolved_uri
+
+    if experiment_name:
+        env["MLFLOW_EXPERIMENT_NAME"] = experiment_name
 
     with open(settings_path, "w") as f:
         json.dump(settings, f, indent=2)

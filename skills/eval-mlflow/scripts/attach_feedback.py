@@ -39,6 +39,8 @@ except ImportError:
           file=sys.stderr)
     sys.exit(0)
 
+mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
+
 from agent_eval.config import EvalConfig
 from agent_eval.mlflow.experiment import log_feedback
 from agent_eval.mlflow.traces import find_run_traces

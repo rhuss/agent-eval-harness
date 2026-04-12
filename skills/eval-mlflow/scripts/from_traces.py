@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 
 import yaml
@@ -24,6 +25,8 @@ except ImportError:
     print("MLflow not installed. Install with: pip install 'mlflow[genai]'",
           file=sys.stderr)
     sys.exit(0)
+
+mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
 
 from agent_eval.config import EvalConfig
 from agent_eval.mlflow.experiment import get_experiment_id

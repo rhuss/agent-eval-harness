@@ -87,14 +87,15 @@ def main():
     print(f"Agent: {runner.name} | Model: {args.model}", file=sys.stderr)
     print(f"Workspace: {args.workspace}", file=sys.stderr)
 
-    # Inject MLflow tracing hook into the workspace if experiment is set.
-    # This adds a Stop hook to the *inner* Claude Code session (the one
-    # that executes the skill) so traces are captured per-run — without
-    # touching the outer project's settings.
+    # Set MLflow environment in the workspace settings so /eval-mlflow
+    # can create a consolidated trace post-hoc from the stream-json log.
+    # We do NOT inject the Stop hook here — it fires for every subagent
+    # session, creating fragmented traces instead of one consolidated trace.
     if args.mlflow_experiment:
-        from agent_eval.mlflow.experiment import inject_tracing_hook
-        inject_tracing_hook(args.workspace, project_root=Path.cwd())
-        print(f"MLflow tracing: injected Stop hook into workspace", file=sys.stderr)
+        from agent_eval.mlflow.experiment import inject_tracing_env
+        inject_tracing_env(args.workspace, project_root=Path.cwd(),
+                           experiment_name=args.mlflow_experiment)
+        print(f"MLflow tracing: environment configured (trace via /eval-mlflow)", file=sys.stderr)
 
     # Use workspace settings if generated (tool interception and/or tracing hooks)
     workspace_settings = Path(args.workspace) / ".claude" / "settings.json"

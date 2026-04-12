@@ -29,6 +29,7 @@ Schema mapping format (tmp/schema_mapping.json):
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -40,6 +41,8 @@ except ImportError:
     print("MLflow not installed. Install with: pip install 'mlflow[genai]'",
           file=sys.stderr)
     sys.exit(0)
+
+mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
 
 from agent_eval.config import EvalConfig
 from agent_eval.mlflow.datasets import get_or_create_dataset, sync_records
