@@ -555,10 +555,25 @@ def _call_judge(client, system_prompt, user_message, model):
         try:
             return json.loads(json_text.strip()), None
         except json.JSONDecodeError:
-            # Fallback: find the last JSON object in the text
-            match = re.search(r'\{[^{}]*"preferred"[^{}]*\}', text, re.DOTALL)
-            if match:
-                return json.loads(match.group()), None
+            # Fallback: extract outermost JSON object containing "preferred"
+            # Walk the text to find balanced braces
+            for start in range(len(text)):
+                if text[start] != "{":
+                    continue
+                depth = 0
+                for end in range(start, len(text)):
+                    if text[end] == "{":
+                        depth += 1
+                    elif text[end] == "}":
+                        depth -= 1
+                    if depth == 0:
+                        candidate = text[start:end + 1]
+                        if '"preferred"' in candidate:
+                            try:
+                                return json.loads(candidate), None
+                            except json.JSONDecodeError:
+                                pass
+                        break
             return None, f"Could not parse JSON from response: {text[:200]}"
     except Exception as e:
         return None, str(e)

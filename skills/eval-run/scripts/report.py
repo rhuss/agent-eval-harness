@@ -796,11 +796,18 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                 html += (f'<details open><summary>Input</summary>'
                          f'<pre class="output">{_esc(input_text)}</pre></details>\n')
 
-        # Output files (skip shared outputs — rendered separately above)
+        # Output files — when baseline is provided, skip files under output_paths
+        # since those will appear in the baseline diff section below.
+        has_baseline = bl_cases_dir and (bl_cases_dir / case_id).exists()
         if case_dir.exists():
             files = sorted(f for f in case_dir.rglob("*") if f.is_file()
                            and not any(str(f.relative_to(case_dir)).startswith(sp)
                                        for sp in shared_paths))
+            if has_baseline:
+                # Exclude files under output_paths — they'll be in the diff
+                files = [f for f in files
+                         if not any(str(f.relative_to(case_dir)).startswith(op)
+                                    for op in output_paths)]
             if files:
                 html += "<details open><summary>Output files</summary>\n"
                 for f in files:
@@ -833,16 +840,16 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                 html += "</details>\n"
 
         # Baseline diff
-        if bl_cases_dir and (bl_cases_dir / case_id).exists():
+        if has_baseline:
             bl_case_dir = bl_cases_dir / case_id
             diffs = []
             for out_path in output_paths:
                 curr_dir = case_dir / out_path if out_path != "." else case_dir
                 base_dir = bl_case_dir / out_path if out_path != "." else bl_case_dir
-                if not curr_dir.exists() or not base_dir.exists():
+                if not curr_dir.exists() and not base_dir.exists():
                     continue
-                curr_files = {f.name: f for f in curr_dir.iterdir() if f.is_file()}
-                base_files = {f.name: f for f in base_dir.iterdir() if f.is_file()}
+                curr_files = {f.name: f for f in curr_dir.iterdir() if f.is_file()} if curr_dir.exists() else {}
+                base_files = {f.name: f for f in base_dir.iterdir() if f.is_file()} if base_dir.exists() else {}
                 for name in sorted(set(curr_files) | set(base_files)):
                     try:
                         ct = curr_files[name].read_text() if name in curr_files else ""
