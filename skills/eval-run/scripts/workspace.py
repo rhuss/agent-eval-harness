@@ -71,7 +71,13 @@ def main():
     # Create output directories from config
     for output in config.outputs:
         if output.path and output.path != ".":
-            (workspace / output.path).mkdir(parents=True, exist_ok=True)
+            out = workspace / output.path
+            # If the path has a file extension (e.g., review-report.html),
+            # create the parent directory instead of treating it as a dir.
+            if out.suffix:
+                out.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                out.mkdir(parents=True, exist_ok=True)
 
     # Build batch entries — include full input file content per case
     batch_entries = []
@@ -187,6 +193,33 @@ def _parse_file(path):
     return None
 
 
+def _expand_symlink_permissions(allow_list):
+    """Add resolved-path variants for permission patterns with symlinked dirs.
+
+    On macOS, /tmp is a symlink to /private/tmp.  Claude Code resolves file
+    paths to their canonical form before matching permission patterns, so
+    ``Write(/tmp/rfe-assess/**)`` won't match a write to the real path
+    ``/private/tmp/rfe-assess/...``.  This function detects such cases and
+    adds the resolved variant alongside the original.
+    """
+    extras = []
+    for pattern in allow_list:
+        m = re.match(r'(Write|Edit|Bash)\((.+)\)', pattern)
+        if not m:
+            continue
+        tool, glob_path = m.groups()
+        # Extract the directory prefix (everything before the first glob char)
+        prefix = re.split(r'[*?]', glob_path, maxsplit=1)[0].rstrip('/')
+        if not prefix or not prefix.startswith('/'):
+            continue
+        resolved = str(Path(prefix).resolve())
+        if resolved != prefix:
+            resolved_pattern = f"{tool}({glob_path.replace(prefix, resolved)})"
+            if resolved_pattern not in allow_list:
+                extras.append(resolved_pattern)
+    return allow_list + extras
+
+
 def _extract_tool_patterns(match_text):
     """Extract tool name patterns from a natural language match description.
 
@@ -269,10 +302,19 @@ def _setup_tool_hooks(workspace, config):
                 proj = _json.load(f)
             proj_perms = proj.get("permissions", {})
             if proj_perms.get("allow"):
-                settings.setdefault("permissions", {})["allow"] = proj_perms["allow"]
+                allow_list = list(proj_perms["allow"])
+                # Resolve symlinked paths (e.g., macOS /tmp → /private/tmp)
+                # so permission patterns match canonical paths.
+                allow_list = _expand_symlink_permissions(allow_list)
+                settings.setdefault("permissions", {})["allow"] = allow_list
             if proj_perms.get("additionalDirectories"):
+                dirs = list(proj_perms["additionalDirectories"])
+                for d in list(dirs):
+                    resolved = str(Path(d).resolve())
+                    if resolved != d and resolved not in dirs:
+                        dirs.append(resolved)
                 settings.setdefault("permissions", {}).setdefault(
-                    "additionalDirectories", []).extend(proj_perms["additionalDirectories"])
+                    "additionalDirectories", []).extend(dirs)
         except (_json.JSONDecodeError, OSError):
             pass
 
