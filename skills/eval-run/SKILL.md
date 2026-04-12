@@ -65,7 +65,25 @@ If no cases found, stop and tell the user clearly:
 - That they need test cases there
 - Suggest running `/eval-dataset` to generate test cases, or `/eval-analyze --update` to reconfigure the dataset path
 
-## Step 2: Prepare Workspace
+## Step 2: Preflight Check
+
+Before setting up the workspace, verify the project's artifact directories are clean. Skills write to the project directory (not the workspace), so stale artifacts from previous runs contaminate results — wrong IDs, stale run reports, inflated file counts.
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/preflight.py \
+  --config <config> \
+  [--run-id <id>]
+```
+
+The script checks all output paths from eval.yaml plus `tmp/` state files. It also checks whether `eval/runs/<id>` already has results from a previous run.
+
+- **If `CLEAN`**: proceed to workspace setup.
+- **If `DIRTY`**: report the findings to the user and ask what to do:
+  - **Force clean**: run `preflight.py --clean` to delete all stale artifacts, then proceed.
+  - **Change run-id**: append a version suffix (e.g., `2026-04-11-opus-v2`) and re-check. This avoids overwriting previous run results but still requires cleaning project artifacts — re-run preflight with `--clean` and the new run-id.
+  - **Abort**: let the user handle cleanup manually.
+
+## Step 3: Prepare Workspace
 
 Create an isolated workspace with the test cases and output directories:
 
@@ -80,7 +98,7 @@ The script prints `WORKSPACE: <path>`, `CASES: <count>`, `BATCH: <path>`. Report
 
 If the case count is 0, stop — the filter matched nothing.
 
-## Step 2b: Resolve Tool Interception (if `inputs.tools` configured)
+## Step 3b: Resolve Tool Interception (if `inputs.tools` configured)
 
 If eval.yaml has `inputs.tools` entries, the workspace script generates basic hook patterns from the `match` text. But complex prompts (like "only allow test Jira instances") need you to refine the generated `tool_handlers.yaml`.
 
@@ -95,7 +113,7 @@ Read `${CLAUDE_SKILL_DIR}/references/tool-interception.md` for the full format a
 
 The hook script (`tools.py`) uses these concrete checks at runtime — no LLM needed during execution.
 
-## Step 3: Execute Skill
+## Step 4: Execute Skill
 
 Run the skill headlessly against all cases. The execute script handles CLI construction, streaming progress, and result capture:
 
@@ -156,7 +174,7 @@ python3 -m agent_eval.state read $AGENT_EVAL_RUNS_DIR/<id>/run_result.json
 
 If `exit_code` is non-zero, report the failure clearly — show the exit code, duration, and the first few lines of `$AGENT_EVAL_RUNS_DIR/<id>/stderr.log`. Do not continue to scoring.
 
-## Step 4: Collect Artifacts
+## Step 5: Collect Artifacts
 
 Distribute workspace outputs into per-case directories so judges can score each case independently:
 
@@ -175,7 +193,7 @@ python3 -m agent_eval.state read $AGENT_EVAL_RUNS_DIR/<id>/collection.json
 
 Report per-case counts. If any case has 0 artifacts, warn — the skill may not have produced output for that case.
 
-## Step 5: Score
+## Step 6: Score
 
 Run all configured judges against the collected outputs. Skip this step if `--no-judge` was specified.
 
@@ -230,7 +248,7 @@ pairwise:  # only if --baseline was used
   ties: 1
 ```
 
-## Step 6: Interpret and Report
+## Step 7: Interpret and Report
 
 Read the summary and analyze the results. Use the framework in `${CLAUDE_SKILL_DIR}/prompts/analyze-results.md` for structure:
 
@@ -271,7 +289,7 @@ Suggest next steps (include `--config <config>` if a non-default config was used
 - `/eval-optimize --model <model>` for automated improvement based on failures
 - `/eval-mlflow --run-id <id>` to log results to MLflow
 
-## Step 7: Log to MLflow (optional)
+## Step 8: Log to MLflow (optional)
 
 If `mlflow_experiment` is configured in eval.yaml:
 
