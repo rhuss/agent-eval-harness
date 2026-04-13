@@ -154,8 +154,10 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
             if final_response:
                 break
 
-    # ── Build tool_result timestamp lookup ──────────────────────
+    # ── Build tool_result timestamp and content lookups ─────────
     tool_result_ns = {}  # tool_use_id -> timestamp_ns
+    tool_result_content = {}  # tool_use_id -> truncated output string
+    _MAX_TOOL_OUTPUT = 500  # chars per tool result
     for e in events:
         if e.get("type") != "user":
             continue
@@ -170,6 +172,20 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                     tuid = b.get("tool_use_id", "")
                     if tuid:
                         tool_result_ns[tuid] = ts_ns
+                        # Extract tool result text
+                        c = b.get("content", "")
+                        if isinstance(c, list):
+                            text = "\n".join(
+                                x.get("text", "") for x in c
+                                if isinstance(x, dict)
+                                and x.get("type") == "text")
+                        elif isinstance(c, str):
+                            text = c
+                        else:
+                            text = ""
+                        if text:
+                            tool_result_content[tuid] = (
+                                text[:_MAX_TOOL_OUTPUT])
 
     # ── Override timestamps for background agents ───────────────
     # Background agents return an immediate "async launched" tool_result,
@@ -316,7 +332,7 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                                 subagent_children.setdefault(
                                     parent_tuid, []).append(
                                     ("llm", None, text, {}))
-            # Also extract timestamps from the output file for timing
+            # Also extract timestamps and tool results from the output file
             with open(output_path) as f:
                 for line in f:
                     line = line.strip()
@@ -339,6 +355,21 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                                     stuid = sb.get("tool_use_id", "")
                                     if stuid:
                                         tool_result_ns[stuid] = ts_ns
+                                        # Extract tool result content
+                                        c = sb.get("content", "")
+                                        if isinstance(c, list):
+                                            txt = "\n".join(
+                                                x.get("text", "")
+                                                for x in c
+                                                if isinstance(x, dict)
+                                                and x.get("type") == "text")
+                                        elif isinstance(c, str):
+                                            txt = c
+                                        else:
+                                            txt = ""
+                                        if txt:
+                                            tool_result_content[stuid] = (
+                                                txt[:_MAX_TOOL_OUTPUT])
         except (OSError, UnicodeDecodeError):
             continue
 
@@ -644,6 +675,10 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
             for (_, tuid, name, inp), end_ns in zip(batch, batch_ends):
                 child_end = end_ns if end_ns else b_end
                 span_type = "AGENT" if name == "Agent" else "TOOL"
+                # Include tool result content as span output
+                tool_output = None
+                if tuid in tool_result_content:
+                    tool_output = {"result": tool_result_content[tuid]}
                 tool_span = _make_span(
                     trace_id, parent_for_children,
                     name=name,
@@ -651,6 +686,7 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                     start_ns=b_start,
                     end_ns=child_end,
                     inputs=_summarize_tool_input(name, inp),
+                    outputs=tool_output,
                 )
                 spans.append(tool_span)
 
@@ -676,18 +712,25 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                             max(child_timestamps), child_end or 0)
 
                     _llm_idx = 0
+                    _sa_recent_tools = []
                     for c_type_tag, c_tuid, c_name, c_inp in children_data:
                         if c_type_tag == "llm":
                             # LLM reasoning span
                             _llm_idx += 1
                             llm_text = c_name  # text stored in name slot
+                            sa_llm_inputs = {"model": model}
+                            if _sa_recent_tools:
+                                sa_llm_inputs["context"] = (
+                                    "; ".join(_sa_recent_tools))
+                                _sa_recent_tools.clear()
                             spans.append(_make_span(
                                 trace_id, agent_span_id,
                                 name="LLM",
                                 span_type="LLM",
                                 start_ns=sa_start,
                                 end_ns=sa_start + int(0.5e9),
-                                inputs={"text": llm_text[:500]},
+                                inputs=sa_llm_inputs,
+                                outputs={"text": llm_text[:500]},
                             ))
                             sa_start += int(0.5e9)
                         else:
@@ -699,6 +742,10 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                                 c_end - int(1e9)) if c_end else sa_start
                             c_type = ("AGENT" if c_name == "Agent"
                                       else "TOOL")
+                            c_output = None
+                            if c_tuid in tool_result_content:
+                                c_output = {
+                                    "result": tool_result_content[c_tuid]}
                             spans.append(_make_span(
                                 trace_id, agent_span_id,
                                 name=c_name,
@@ -708,7 +755,10 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                                            c_start + int(0.1e9)),
                                 inputs=_summarize_tool_input(
                                     c_name, c_inp),
+                                outputs=c_output,
                             ))
+                            _sa_recent_tools.append(
+                                _tool_one_liner(c_name, c_inp))
                             sa_start = max(
                                 sa_start,
                                 c_end + int(0.1e9)) if c_end else (
