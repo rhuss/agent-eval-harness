@@ -22,6 +22,9 @@ all = [
     "anthropic>=0.40",
 ]
 
+[project.scripts]
+claude-trace = "agent_eval.cli.trace_run:main"
+
 [tool.setuptools.packages.find]
 include = ["agent_eval*"]
 
