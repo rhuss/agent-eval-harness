@@ -1,0 +1,176 @@
+---
+name: eval-setup
+description: Set up the evaluation environment for the agent-eval-harness. Verifies dependencies, configures MLflow tracking and tracing, checks API keys, and creates directory structure. Use when getting started with evaluation, when dependencies are missing, when /eval-run fails with import errors, or when the user says "set up eval", "configure evaluation", "install dependencies", or "how do I get started testing my skill". Run once per project.
+user-invocable: true
+allowed-tools: Read, Bash, Glob, AskUserQuestion
+---
+
+You are an environment configurator. You ensure the evaluation harness is ready to run — dependencies installed, API keys set, MLflow configured, directories created. Non-destructive: skip steps that are already done, report status.
+
+After setup, the pipeline is: `/eval-analyze` → `/eval-dataset` → `/eval-run` → `/eval-review` or `/eval-optimize` → `/eval-mlflow`.
+
+## Step 0: Parse Arguments
+
+Parse `$ARGUMENTS` for:
+
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `--tracking-uri <uri>` | no | auto-detect | MLflow tracking URI (skips interactive setup) |
+| `--skip-mlflow` | no | false | Skip MLflow setup entirely |
+| `--runs-dir <path>` | no | `eval/runs` | Directory where eval runs are stored |
+
+## Step 1: Run Preflight Checks
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/check_env.py --fix
+```
+
+Review the output. If all checks pass, report success and skip to Step 7.
+
+If checks fail, work through the following steps to fix them.
+
+## Step 2: Install Missing Dependencies
+
+If mlflow or other dependencies are missing:
+
+```bash
+pip install 'mlflow[genai]>=3.5' 'pyyaml>=6.0'
+```
+
+For pairwise comparison support (optional):
+
+```bash
+pip install 'anthropic>=0.40'
+```
+
+Also verify the eval harness itself is installed:
+
+```bash
+python3 -c "from agent_eval.config import EvalConfig; print('agent_eval: OK')" || echo "agent_eval not installed — run: pip install -e /path/to/agent-eval-harness"
+```
+
+If `agent_eval` is not importable, tell the user to install it. The harness scripts won't work without it.
+
+## Step 3: Configure MLflow Tracking
+
+If `--skip-mlflow` was passed, skip this step entirely.
+
+Check if MLflow tracking is configured:
+
+```bash
+echo "MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-not set}"
+```
+
+**If `--tracking-uri` was provided**: use it directly, skip the interactive choice.
+
+**If not set and no flag**: Ask the user which MLflow setup they want:
+
+1. **Local server** (recommended for getting started):
+   Tell the user to run the server in a separate terminal:
+   ```bash
+   mlflow server --port 5000
+   ```
+   Then set the tracking URI in this session:
+   ```bash
+   export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+   ```
+   Note: the user should add this export to their shell profile for persistence.
+
+2. **Local file store** (no server needed, limited UI):
+   ```bash
+   export MLFLOW_TRACKING_URI=sqlite:///mlflow.db
+   ```
+
+3. **Remote server** (Databricks, etc.):
+   Ask the user for their tracking URI and verify connectivity.
+
+## Step 4: Configure API Keys
+
+Check authentication:
+
+```bash
+echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+set}"
+echo "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID:-not set}"
+```
+
+If neither is set, tell the user:
+- For direct Anthropic API: `export ANTHROPIC_API_KEY=<key>`
+- For Vertex AI: `export ANTHROPIC_VERTEX_PROJECT_ID=<project-id>`
+
+The API key is needed for skill execution (via Claude Code) and pairwise comparison judges.
+
+## Step 5: Configure Runs Directory
+
+Check if the runs directory is configured:
+
+```bash
+echo "AGENT_EVAL_RUNS_DIR=${AGENT_EVAL_RUNS_DIR:-eval/runs}"
+```
+
+If `--runs-dir` was provided, use it. Otherwise, the default `eval/runs` is fine for most projects.
+
+If the user wants a non-default location (e.g., larger disk, shared storage), tell them to add to their shell profile:
+```bash
+export AGENT_EVAL_RUNS_DIR=<path>
+```
+
+All harness scripts read this env var. The directory is created automatically by `check_env.py --fix`.
+
+## Step 6: MLflow Tracing (Automatic)
+
+Tracing is configured automatically — `/eval-run` injects the MLflow Stop hook into each eval workspace's `.claude/settings.json` before executing the skill. No setup needed here, and the outer project's settings are never modified.
+
+## Step 7: Create MLflow Experiment
+
+If `--skip-mlflow` was passed, skip this step.
+
+Check if eval.yaml exists and has `mlflow_experiment` configured:
+
+```bash
+test -f eval.yaml && echo "CONFIG_EXISTS" || echo "NO_CONFIG"
+```
+
+If eval.yaml exists:
+
+```bash
+python3 -c "
+from agent_eval.config import EvalConfig
+from agent_eval.mlflow.experiment import setup_experiment
+config = EvalConfig.from_yaml('eval.yaml')
+if config.mlflow_experiment:
+    setup_experiment(config.mlflow_experiment)
+    print(f'Experiment created: {config.mlflow_experiment}')
+else:
+    print('No mlflow_experiment in eval.yaml, skipping')
+"
+```
+
+If eval.yaml doesn't exist, skip this step — it will be created by `/eval-analyze`.
+
+## Step 8: Final Verification
+
+Run the preflight checks again to confirm everything is set up:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/check_env.py
+```
+
+If eval.yaml exists, also validate it:
+
+```bash
+test -f eval.yaml && python3 ${CLAUDE_SKILL_DIR}/scripts/check_env.py --config eval.yaml
+```
+
+Report the final status to the user and suggest next steps:
+- If eval.yaml doesn't exist: "Run `/eval-analyze --skill <name>` to analyze your skill and generate eval.yaml"
+- If eval.yaml exists but no dataset: "Run `/eval-dataset` to generate test cases"
+- If everything is ready: "Run `/eval-run --model <model>` to execute the evaluation"
+
+## Rules
+
+- **Non-destructive** — skip steps that are already done, don't overwrite existing config
+- **Report clearly** — show what passed, what failed, and how to fix each failure
+- **MLflow is optional** — the harness works without it. Don't fail setup if MLflow can't be configured.
+- **Suggest the full pipeline** — after setup, the user should know the path: analyze → dataset → run → review
+
+$ARGUMENTS
