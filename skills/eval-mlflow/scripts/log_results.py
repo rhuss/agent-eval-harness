@@ -195,10 +195,14 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                         result_indices.add(i)
 
     # ── Build subagent child lookup ──────────────────────────────
-    # Maps parent Agent tool_use_id → list of child tool calls.
+    # Maps parent Agent tool_use_id → list of child spans (tool calls
+    # AND LLM reasoning segments).
     # Sources: (1) inline via parent_tool_use_id in the main stream,
     #          (2) background agent output files referenced in tool_results.
-    subagent_children = {}  # parent_tuid -> [(tuid, name, input), ...]
+    # Each child is a tuple:
+    #   ("tool", tuid, name, input)  — tool call
+    #   ("llm", None, text, {})     — LLM reasoning text
+    subagent_children = {}  # parent_tuid -> [("tool"|"llm", ...), ...]
     subagent_tuids = set()  # tool_use_ids that belong to subagents
 
     # Source 1: inline children (foreground subagents)
@@ -210,8 +214,13 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
             if isinstance(b, dict) and b.get("type") == "tool_use":
                 tuid = b.get("id", "")
                 subagent_children.setdefault(ptui, []).append(
-                    (tuid, b.get("name", "unknown"), b.get("input", {})))
+                    ("tool", tuid, b.get("name", "unknown"), b.get("input", {})))
                 subagent_tuids.add(tuid)
+            elif isinstance(b, dict) and b.get("type") == "text":
+                text = b.get("text", "").strip()
+                if text:
+                    subagent_children.setdefault(ptui, []).append(
+                        ("llm", None, text, {}))
 
     # Source 2: background agent output files
     # Parse tool_results to map agentId → parent tool_use_id and find
@@ -244,12 +253,41 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
             if m_id and m_file:
                 _agent_output_files[m_id.group(1)] = m_file.group(1)
 
+    # Resolve subagent output directory: saved copies from execute.py
+    # live alongside stdout.log in <run_dir>/subagents/.
+    _subagent_dir = stdout_path.parent / "subagents"
+
     for agent_id, output_path in _agent_output_files.items():
         parent_tuid = _agent_to_parent.get(agent_id)
         if not parent_tuid or parent_tuid in subagent_children:
             continue  # already have inline children
+        # Try original path first, then fall back to saved copy,
+        # then try resolving the symlink target, then search the
+        # .claude/projects/ session directory.
         if not os.path.exists(output_path):
-            continue
+            fallback = _subagent_dir / f"{agent_id}.jsonl"
+            if fallback.exists():
+                output_path = str(fallback)
+            else:
+                # Try resolving symlink (may point to .claude/projects/)
+                try:
+                    _real = os.path.realpath(output_path)
+                    if os.path.exists(_real):
+                        output_path = _real
+                    else:
+                        # Search .claude/projects/ for the file
+                        from pathlib import Path as _P
+                        _found = False
+                        for _sd in _P.home().glob(
+                                f".claude/projects/*/*/subagents/"
+                                f"agent-{agent_id}.jsonl"):
+                            output_path = str(_sd)
+                            _found = True
+                            break
+                        if not _found:
+                            continue
+                except OSError:
+                    continue
         try:
             with open(output_path) as f:
                 for line in f:
@@ -267,9 +305,17 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                             child_tuid = b.get("id", "")
                             subagent_children.setdefault(
                                 parent_tuid, []).append(
-                                (child_tuid, b.get("name", "unknown"),
+                                ("tool", child_tuid,
+                                 b.get("name", "unknown"),
                                  b.get("input", {})))
                             subagent_tuids.add(child_tuid)
+                        elif (isinstance(b, dict)
+                              and b.get("type") == "text"):
+                            text = b.get("text", "").strip()
+                            if text:
+                                subagent_children.setdefault(
+                                    parent_tuid, []).append(
+                                    ("llm", None, text, {}))
             # Also extract timestamps from the output file for timing
             with open(output_path) as f:
                 for line in f:
@@ -612,11 +658,12 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                 if name == "Agent" and tuid in subagent_children:
                     agent_span_id = tool_span["span_id"]
                     children_data = subagent_children[tuid]
-                    # Derive the subagent's time window from its children's
-                    # timestamps so spans don't have negative durations.
-                    child_timestamps = [tool_result_ns[ct]
-                                        for ct, _, _ in children_data
-                                        if ct in tool_result_ns]
+                    # Derive the subagent's time window from its tool
+                    # children's timestamps (LLM spans don't have tuids).
+                    child_timestamps = [
+                        tool_result_ns[ct]
+                        for ctype, ct, _, _ in children_data
+                        if ctype == "tool" and ct in tool_result_ns]
                     if child_timestamps:
                         sa_start = min(child_timestamps) - int(1e9)
                         sa_start = max(sa_start, b_start)
@@ -628,18 +675,44 @@ def _build_main_trace(stdout_path, run_result, run_id, experiment_id):
                         tool_span["end_time_unix_nano"] = max(
                             max(child_timestamps), child_end or 0)
 
-                    for c_tuid, c_name, c_inp in children_data:
-                        c_end = tool_result_ns.get(c_tuid, child_end)
-                        c_start = max(sa_start, c_end - int(1e9)) if c_end else sa_start
-                        c_type = "AGENT" if c_name == "Agent" else "TOOL"
-                        spans.append(_make_span(
-                            trace_id, agent_span_id,
-                            name=c_name,
-                            span_type=c_type,
-                            start_ns=c_start,
-                            end_ns=max(c_end, c_start + int(0.1e9)),
-                            inputs=_summarize_tool_input(c_name, c_inp),
-                        ))
+                    _llm_idx = 0
+                    for c_type_tag, c_tuid, c_name, c_inp in children_data:
+                        if c_type_tag == "llm":
+                            # LLM reasoning span
+                            _llm_idx += 1
+                            llm_text = c_name  # text stored in name slot
+                            spans.append(_make_span(
+                                trace_id, agent_span_id,
+                                name="LLM",
+                                span_type="LLM",
+                                start_ns=sa_start,
+                                end_ns=sa_start + int(0.5e9),
+                                inputs={"text": llm_text[:500]},
+                            ))
+                            sa_start += int(0.5e9)
+                        else:
+                            # Tool call span
+                            c_end = tool_result_ns.get(
+                                c_tuid, child_end)
+                            c_start = max(
+                                sa_start,
+                                c_end - int(1e9)) if c_end else sa_start
+                            c_type = ("AGENT" if c_name == "Agent"
+                                      else "TOOL")
+                            spans.append(_make_span(
+                                trace_id, agent_span_id,
+                                name=c_name,
+                                span_type=c_type,
+                                start_ns=c_start,
+                                end_ns=max(c_end,
+                                           c_start + int(0.1e9)),
+                                inputs=_summarize_tool_input(
+                                    c_name, c_inp),
+                            ))
+                            sa_start = max(
+                                sa_start,
+                                c_end + int(0.1e9)) if c_end else (
+                                sa_start + int(1e9))
 
         cursor_ns = step_end
 
