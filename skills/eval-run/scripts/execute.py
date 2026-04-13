@@ -123,6 +123,14 @@ def main():
     if result.stderr:
         (output_dir / "stderr.log").write_text(result.stderr)
 
+    # Save background agent output files (captured in-flight by the runner
+    # before session cleanup destroys them).
+    if result.subagent_outputs:
+        subagent_dir = output_dir / "subagents"
+        subagent_dir.mkdir(exist_ok=True)
+        for agent_id, content in result.subagent_outputs.items():
+            (subagent_dir / f"{agent_id}.jsonl").write_text(content)
+
     full_model = result.resolved_model or args.model
     # Subagent models: from stream events (actual), or CLI flag, or same as main
     models_used = result.models_used or []

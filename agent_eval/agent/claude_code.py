@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -135,9 +136,13 @@ class ClaudeCodeRunner(EvalRunner):
             "--output-format", "stream-json" if self._log_prefix else "json",
             "--max-budget-usd", str(max_budget_usd),
         ]
-        # Session persistence is not needed — traces are created post-hoc
-        # from the stream-json log by /eval-mlflow, not by the Stop hook.
-        cmd.append("--no-session-persistence")
+        # Keep session persistence ON so subagent .jsonl files survive
+        # long enough for the runner to capture them on task_notification.
+        # With --no-session-persistence, Claude Code deletes subagent
+        # conversation files when each agent completes — before the runner
+        # can read them.  Traces are still created post-hoc from
+        # stream-json by /eval-mlflow (the Stop hook is not injected).
+        # The session is cleaned up after subagent files are captured.
         if self._log_prefix:
             cmd.append("--verbose")
 
@@ -198,6 +203,12 @@ class ClaudeCodeRunner(EvalRunner):
 
             result_obj = None
             resolved_model = None
+            # Track background agent output files so we can read them
+            # while the process is still alive (they become broken symlinks
+            # after the session ends).
+            _bg_output_files = {}   # tool_use_id -> output_file_path
+            _bg_agent_outputs = {}  # agentId -> file_content
+
             for line in proc.stdout:
                 if time.monotonic() > deadline:
                     raise subprocess.TimeoutExpired(cmd, timeout_s)
@@ -225,13 +236,92 @@ class ClaudeCodeRunner(EvalRunner):
                                 print(f"  {self._log_prefix} | {msg}", flush=True)
                         if obj.get("type") == "result":
                             result_obj = obj
+
+                        # Track background agent output file paths from
+                        # the "async launched" tool_result.
+                        if obj.get("type") == "user":
+                            for blk in (obj.get("message", {})
+                                        .get("content", [])):
+                                if (isinstance(blk, dict)
+                                        and blk.get("type") == "tool_result"):
+                                    _c = blk.get("content", "")
+                                    _txt = (_c if isinstance(_c, str)
+                                            else " ".join(
+                                                x.get("text", "")
+                                                for x in _c
+                                                if isinstance(x, dict)))
+                                    _m_id = re.search(
+                                        r"agentId:\s*(\w+)", _txt)
+                                    _m_file = re.search(
+                                        r"output_file:\s*(\S+)", _txt)
+                                    if _m_id and _m_file:
+                                        _tuid = blk.get("tool_use_id", "")
+                                        _bg_output_files[_tuid] = (
+                                            _m_id.group(1),
+                                            _m_file.group(1))
+
+                        # When a background agent completes, read its output
+                        # file immediately — it still exists while the
+                        # process is alive but will be cleaned up on exit.
+                        if (obj.get("type") == "system"
+                                and obj.get("subtype") == "task_notification"
+                                and obj.get("status") == "completed"):
+                            _tuid = obj.get("tool_use_id", "")
+                            if _tuid in _bg_output_files:
+                                _aid, _path = _bg_output_files[_tuid]
+                                if _aid not in _bg_agent_outputs:
+                                    try:
+                                        with open(_path) as _f:
+                                            _bg_agent_outputs[_aid] = (
+                                                _f.read())
+                                    except (OSError, UnicodeDecodeError):
+                                        pass
+
                     except json.JSONDecodeError:
                         pass
                 stdout_lines.append(line)
 
+            # Final sweep: read any remaining background agent output
+            # files before the process exits and cleans them up.
+            for _tuid, (_aid, _path) in _bg_output_files.items():
+                if _aid not in _bg_agent_outputs:
+                    try:
+                        with open(_path) as _f:
+                            _bg_agent_outputs[_aid] = _f.read()
+                    except (OSError, UnicodeDecodeError):
+                        pass
+
             remaining = max(0, deadline - time.monotonic())
             stderr = proc.stderr.read()
             proc.wait(timeout=max(remaining, 5))
+
+            # Post-exit sweep: if the in-flight reads missed any agents
+            # (e.g. file was still being written), try the session's
+            # subagents/ directory which persists after the process exits.
+            if len(_bg_agent_outputs) < len(_bg_output_files):
+                for _tuid, (_aid, _path) in _bg_output_files.items():
+                    if _aid in _bg_agent_outputs:
+                        continue
+                    # Resolve the symlink to find the .jsonl in .claude/
+                    try:
+                        _real = os.path.realpath(_path)
+                        if os.path.exists(_real):
+                            with open(_real) as _f:
+                                _bg_agent_outputs[_aid] = _f.read()
+                    except (OSError, UnicodeDecodeError):
+                        pass
+                    # Also try the session subagents dir directly
+                    if _aid not in _bg_agent_outputs:
+                        _session_dir = (
+                            Path.home() / ".claude" / "projects"
+                        )
+                        for _sd in _session_dir.glob(
+                                f"*/*/subagents/agent-{_aid}.jsonl"):
+                            try:
+                                _bg_agent_outputs[_aid] = _sd.read_text()
+                                break
+                            except (OSError, UnicodeDecodeError):
+                                pass
 
         except subprocess.TimeoutExpired:
             proc.kill()
@@ -282,6 +372,7 @@ class ClaudeCodeRunner(EvalRunner):
             resolved_model=resolved_model,
             models_used=sorted(models_seen) if models_seen else None,
             raw_output=raw_output,
+            subagent_outputs=_bg_agent_outputs or None,
         )
 
     # Environment keys safe to forward to evaluated skills
