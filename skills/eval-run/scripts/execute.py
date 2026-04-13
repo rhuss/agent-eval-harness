@@ -123,13 +123,17 @@ def main():
     if result.stderr:
         (output_dir / "stderr.log").write_text(result.stderr)
 
-    # Save background agent output files (captured in-flight by the runner
-    # before session cleanup destroys them).
-    if result.subagent_outputs:
-        subagent_dir = output_dir / "subagents"
-        subagent_dir.mkdir(exist_ok=True)
-        for agent_id, content in result.subagent_outputs.items():
-            (subagent_dir / f"{agent_id}.jsonl").write_text(content)
+    # Copy subagent transcripts captured by the SubagentStop hook.
+    # The hook copies .jsonl files to workspace/subagents/ while the
+    # session is still alive. We move them to the run output directory.
+    ws_subagents = Path(args.workspace) / "subagents"
+    if ws_subagents.exists():
+        import shutil
+        out_subagents = output_dir / "subagents"
+        out_subagents.mkdir(exist_ok=True)
+        for f in ws_subagents.iterdir():
+            if f.is_file():
+                shutil.copy2(f, out_subagents / f.name)
 
     full_model = result.resolved_model or args.model
     # Subagent models: from stream events (actual), or CLI flag, or same as main

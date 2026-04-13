@@ -39,7 +39,7 @@ from agent_eval.agent.stream_capture import (
     make_prompt_event,
     inject_timestamp,
     extract_usage,
-    SubagentCapture,
+    setup_subagent_hook,
 )
 
 
@@ -75,12 +75,27 @@ def main():
                      f"tmp/trace-runs/{datetime.now().strftime('%Y%m%d-%H%M%S')}"))
     trace_dir.mkdir(parents=True, exist_ok=True)
 
+    # Write a temporary settings.json with SubagentStop hook so
+    # background agent transcripts are captured to trace_dir/subagents/.
+    settings_dir = trace_dir / ".claude"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    settings = {}
+    subagent_dir = str((trace_dir / "subagents").resolve())
+    setup_subagent_hook(settings, subagent_dir)
+    import json as _json
+    with open(settings_dir / "settings.json", "w") as f:
+        _json.dump(settings, f, indent=2)
+    # Inject --settings if not already provided
+    if "--settings" not in claude_args:
+        cmd.extend(["--settings", str(settings_dir / "settings.json")])
+
+    cmd.append("--no-session-persistence")
+
     print(f"claude-trace: running with tracing to {trace_dir}", file=sys.stderr)
     print(f"claude-trace: cmd = {' '.join(cmd[:6])}...", file=sys.stderr)
 
     start = time.monotonic()
     stdout_lines = []
-    capture = SubagentCapture()
     resolved_model = None
 
     proc = subprocess.Popen(
@@ -110,8 +125,6 @@ def main():
                     and obj.get("type") == "system"
                     and obj.get("subtype") == "init"):
                 resolved_model = obj.get("model")
-            # Track subagent output files
-            capture.on_event(obj)
             # Print progress
             if obj.get("type") == "result":
                 cost = obj.get("total_cost_usd", 0)
@@ -122,11 +135,8 @@ def main():
             pass
         stdout_lines.append(line)
 
-    # Capture subagent files
-    capture.final_sweep()
     stderr = proc.stderr.read()
     proc.wait()
-    capture.post_exit_sweep()
 
     duration = time.monotonic() - start
 
@@ -138,13 +148,6 @@ def main():
     # stderr.log
     if stderr:
         (trace_dir / "stderr.log").write_text(stderr)
-
-    # Subagent files
-    if capture.outputs:
-        sa_dir = trace_dir / "subagents"
-        sa_dir.mkdir(exist_ok=True)
-        for agent_id, content in capture.outputs.items():
-            (sa_dir / f"{agent_id}.jsonl").write_text(content)
 
     # run_result.json
     token_usage, cost_usd, num_turns, models_seen = extract_usage(stdout_lines)

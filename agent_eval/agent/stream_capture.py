@@ -7,7 +7,7 @@ from ``claude --print --output-format stream-json``.  Used by both
 
 import json
 import os
-import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -107,101 +107,31 @@ def extract_usage(stdout_lines):
     return token_usage, cost_usd, num_turns or None, models_seen
 
 
-# ── Subagent capture ─────────────────────────────────────────────────
+# ── Subagent capture via hooks ───────────────────────────────────────
 
-class SubagentCapture:
-    """Track and capture background agent .jsonl files in-flight.
+def setup_subagent_hook(settings: dict, subagent_dir: str) -> None:
+    """Add a SubagentStop hook to settings that copies transcripts.
 
-    Background agents write their conversation to .jsonl files that
-    Claude Code deletes when the session ends.  This class tracks
-    output file paths from tool_result events and reads them before
-    they're cleaned up.
+    The SubagentStop hook fires synchronously when a subagent finishes,
+    while the transcript file still exists. The hook copies it to a
+    known location before Claude Code cleans up the session.
 
-    Usage::
+    This replaces the old in-flight capture approach (SubagentCapture)
+    which required session persistence and complex multi-phase reads.
 
-        capture = SubagentCapture()
-        for event in stream_events:
-            capture.on_event(event)
-        capture.final_sweep()
-        # after process exits:
-        capture.post_exit_sweep()
-        subagent_files = capture.outputs
+    Args:
+        settings: The workspace .claude/settings.json dict (modified in place).
+        subagent_dir: Absolute path to the directory where transcripts
+            should be copied (e.g., /tmp/agent-eval/run-001/subagents).
     """
-
-    def __init__(self):
-        self._output_files = {}   # tool_use_id -> (agent_id, file_path)
-        self._agent_outputs = {}  # agent_id -> file_content
-
-    def on_event(self, event: dict) -> None:
-        """Process a stream-json event for subagent tracking."""
-        # Track output file paths from "async launched" tool_results
-        if event.get("type") == "user":
-            for blk in event.get("message", {}).get("content", []):
-                if isinstance(blk, dict) and blk.get("type") == "tool_result":
-                    c = blk.get("content", "")
-                    txt = (c if isinstance(c, str)
-                           else " ".join(
-                               x.get("text", "") for x in c
-                               if isinstance(x, dict)))
-                    m_id = re.search(r"agentId:\s*(\w+)", txt)
-                    m_file = re.search(r"output_file:\s*(\S+)", txt)
-                    if m_id and m_file:
-                        tuid = blk.get("tool_use_id", "")
-                        self._output_files[tuid] = (
-                            m_id.group(1), m_file.group(1))
-
-        # Read output file immediately on completion notification
-        if (event.get("type") == "system"
-                and event.get("subtype") == "task_notification"
-                and event.get("status") == "completed"):
-            tuid = event.get("tool_use_id", "")
-            if tuid in self._output_files:
-                aid, path = self._output_files[tuid]
-                if aid not in self._agent_outputs:
-                    self._read_file(aid, path)
-
-    def final_sweep(self) -> None:
-        """Read any remaining output files before process exit."""
-        for _tuid, (aid, path) in self._output_files.items():
-            if aid not in self._agent_outputs:
-                self._read_file(aid, path)
-
-    def post_exit_sweep(self) -> None:
-        """Try to recover output files after process has exited.
-
-        Resolves symlinks and searches the .claude/projects/ session
-        directory as a last resort.
-        """
-        if len(self._agent_outputs) >= len(self._output_files):
-            return
-        for _tuid, (aid, path) in self._output_files.items():
-            if aid in self._agent_outputs:
-                continue
-            # Try resolved symlink
-            try:
-                real = os.path.realpath(path)
-                if os.path.exists(real):
-                    self._agent_outputs[aid] = open(real).read()
-                    continue
-            except (OSError, UnicodeDecodeError):
-                pass
-            # Search session subagents dir
-            session_dir = Path.home() / ".claude" / "projects"
-            for sd in session_dir.glob(f"*/*/subagents/agent-{aid}.jsonl"):
-                try:
-                    self._agent_outputs[aid] = sd.read_text()
-                    break
-                except (OSError, UnicodeDecodeError):
-                    pass
-
-    @property
-    def outputs(self) -> dict:
-        """Agent ID → file content for all captured subagent outputs."""
-        return dict(self._agent_outputs)
-
-    def _read_file(self, agent_id: str, path: str) -> None:
-        try:
-            with open(path) as f:
-                self._agent_outputs[agent_id] = f.read()
-        except (OSError, UnicodeDecodeError):
-            pass
+    hook_script = (
+        f'mkdir -p {subagent_dir} && '
+        f'cp "$AGENT_TRANSCRIPT_PATH" {subagent_dir}/ 2>/dev/null; true'
+    )
+    hooks = settings.setdefault("hooks", {})
+    hooks.setdefault("SubagentStop", []).append({
+        "hooks": [{
+            "type": "command",
+            "command": f"bash -c '{hook_script}'",
+        }],
+    })

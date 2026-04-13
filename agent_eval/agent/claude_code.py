@@ -10,7 +10,7 @@ from typing import Optional
 
 from .base import EvalRunner, RunResult
 from .stream_capture import (
-    make_prompt_event, inject_timestamp, extract_usage, SubagentCapture
+    make_prompt_event, inject_timestamp, extract_usage, setup_subagent_hook
 )
 
 _print_lock = threading.Lock()
@@ -71,9 +71,8 @@ class ClaudeCodeRunner(EvalRunner):
             "--model", model,
             "--output-format", "stream-json" if self._log_prefix else "json",
             "--max-budget-usd", str(max_budget_usd),
+            "--no-session-persistence",
         ]
-        # Keep session persistence ON so subagent .jsonl files survive
-        # long enough for the runner to capture them on task_notification.
         if self._log_prefix:
             cmd.append("--verbose")
 
@@ -103,7 +102,6 @@ class ClaudeCodeRunner(EvalRunner):
         start = time.monotonic()
         stdout_lines = []
         deadline = start + timeout_s
-        capture = SubagentCapture()
 
         try:
             proc = subprocess.Popen(
@@ -147,23 +145,13 @@ class ClaudeCodeRunner(EvalRunner):
                                 print(f"  {self._log_prefix} | {msg}", flush=True)
                         if obj.get("type") == "result":
                             result_obj = obj
-
-                        # Track and capture subagent output files
-                        capture.on_event(obj)
-
                     except json.JSONDecodeError:
                         pass
                 stdout_lines.append(line)
 
-            # Final sweep before process exits
-            capture.final_sweep()
-
             remaining = max(0, deadline - time.monotonic())
             stderr = proc.stderr.read()
             proc.wait(timeout=max(remaining, 5))
-
-            # Post-exit sweep for any remaining subagent files
-            capture.post_exit_sweep()
 
         except subprocess.TimeoutExpired:
             proc.kill()
@@ -214,7 +202,6 @@ class ClaudeCodeRunner(EvalRunner):
             resolved_model=resolved_model,
             models_used=sorted(models_seen) if models_seen else None,
             raw_output=raw_output,
-            subagent_outputs=capture.outputs or None,
         )
 
     # Environment keys safe to forward to evaluated skills

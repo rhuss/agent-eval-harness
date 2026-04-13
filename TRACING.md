@@ -134,13 +134,23 @@ claude-trace --model opus -p "/rfe.speedrun ..."
   └─ Exits with same exit code as claude
 ```
 
+### How subagent transcripts are captured
+
+Skills that use background agents (Agent tool) produce separate conversation files per subagent. Claude Code deletes these when the session ends. We use a **SubagentStop hook** to capture them:
+
+1. `claude-trace` (and the eval pipeline) injects a `SubagentStop` hook into `.claude/settings.json`
+2. When each subagent finishes, the hook fires synchronously and copies its `.jsonl` transcript to a known directory
+3. The trace builder reads these files to create nested agent spans with tool calls and LLM reasoning
+
+This is simpler than the alternative (in-flight file reading while the process runs) and doesn't require session persistence.
+
 ### Why not the MLflow Stop hook?
 
 Claude Code has a Stop hook mechanism (`mlflow autolog claude`) that creates traces automatically. We don't use it because:
 
-1. **Fragmented traces** — the Stop hook fires once per Claude Code session. Skills that use background agents (Agent tool) create multiple sessions, producing N+1 fragmented traces instead of one consolidated trace.
-2. **Missing prompt** — `claude --print` doesn't record the stdin prompt in the session, so the trace has no record of the input.
-3. **Missing timestamps** — assistant events lack wall-clock timestamps, making span timing unreliable.
+1. **Fragmented traces** — the Stop hook fires once per Claude Code session. Skills with background agents produce N+1 fragmented traces instead of one consolidated trace.
+2. **Missing prompt** — `claude --print` doesn't record the stdin prompt in the session.
+3. **Missing timestamps** — assistant events lack wall-clock timestamps.
 
 Instead, `claude-trace` captures the full stream-json output, injects synthetic events and timestamps, and builds one consolidated trace post-hoc.
 
