@@ -29,7 +29,6 @@ Environment:
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -159,12 +158,10 @@ def main():
 
     duration = time.monotonic() - start
 
-    # Clean up session directory (transcript files already copied by hook)
-    projects_dir = Path.home() / ".claude" / "projects"
-    cwd_encoded = "-" + str(Path.cwd()).replace("/", "-")
-    session_dir = projects_dir / cwd_encoded
-    if session_dir.exists():
-        shutil.rmtree(session_dir, ignore_errors=True)
+    # NOTE: no session cleanup here.  Unlike the eval runner (which uses
+    # disposable temp workspaces), claude-trace runs in the user's real
+    # project directory — deleting that session dir would destroy their
+    # Claude Code session history.
 
     # ── Save artifacts ───────────────────────────────────────────
     # stdout.log

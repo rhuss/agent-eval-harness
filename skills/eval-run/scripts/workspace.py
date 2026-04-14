@@ -371,8 +371,9 @@ def _setup_tool_hooks(workspace, config):
         "additionalDirectories", []).append(project_root)
 
     # Add SubagentStop hook to capture background agent transcripts.
-    # The hook copies each subagent's .jsonl file to workspace/subagents/
-    # while the session is still alive — no session persistence needed.
+    # The hook copies each subagent's .jsonl file to workspace/subagents/.
+    # Requires session persistence ON (the runner must NOT pass
+    # --no-session-persistence) so transcript files survive until the hook fires.
     from agent_eval.agent.stream_capture import setup_subagent_hook
     subagent_dir = str((workspace / "subagents").resolve())
     setup_subagent_hook(settings, subagent_dir)

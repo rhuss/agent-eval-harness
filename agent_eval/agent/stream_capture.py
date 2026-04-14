@@ -55,16 +55,18 @@ def extract_usage(stdout_lines):
     - Token totals: from ``result.modelUsage`` (includes all subagents).
       Falls back to summing ``assistant`` event usage if modelUsage is absent.
     - Cost: from the last ``result`` event (cumulative in Claude Code).
-    - Turns: count of ``assistant`` events (includes subagent turns).
+    - Turns: count of unique ``assistant`` messages (by message ID).
+      Claude Code stream-json emits multiple ``assistant`` events per API
+      turn (one per content block), so counting raw events overcounts.
     - Models: all distinct models observed in ``assistant`` events.
 
     Returns:
         Tuple of (token_usage, cost_usd, num_turns, models_seen).
     """
-    num_turns = 0
     cost_usd = None
     models_seen = set()
     model_usage = None
+    seen_msg_ids = set()
     fb_input = fb_output = fb_cache_read = fb_cache_create = 0
     for line in stdout_lines:
         try:
@@ -72,7 +74,9 @@ def extract_usage(stdout_lines):
         except (json.JSONDecodeError, ValueError):
             continue
         if obj.get("type") == "assistant":
-            num_turns += 1
+            msg_id = obj.get("message", {}).get("id")
+            if msg_id:
+                seen_msg_ids.add(msg_id)
             u = obj.get("message", {}).get("usage", {})
             fb_input += u.get("input_tokens", 0)
             fb_output += u.get("output_tokens", 0)
@@ -104,7 +108,8 @@ def extract_usage(stdout_lines):
             "input": fb_input, "output": fb_output,
             "cache_read": fb_cache_read, "cache_create": fb_cache_create,
         }
-    return token_usage, cost_usd, num_turns or None, models_seen
+    num_turns = len(seen_msg_ids) or None
+    return token_usage, cost_usd, num_turns, models_seen
 
 
 # ── Subagent capture via hooks ───────────────────────────────────────
