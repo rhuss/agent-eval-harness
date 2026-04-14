@@ -29,6 +29,7 @@ Environment:
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -89,7 +90,8 @@ def main():
     if "--settings" not in claude_args:
         cmd.extend(["--settings", str(settings_dir / "settings.json")])
 
-    cmd.append("--no-session-persistence")
+    # Session persistence must stay ON so subagent transcript files
+    # survive long enough for the SubagentStop hook to copy them.
 
     print(f"claude-trace: running with tracing to {trace_dir}", file=sys.stderr)
     print(f"claude-trace: cmd = {' '.join(cmd[:6])}...", file=sys.stderr)
@@ -139,6 +141,13 @@ def main():
     proc.wait()
 
     duration = time.monotonic() - start
+
+    # Clean up session directory (transcript files already copied by hook)
+    projects_dir = Path.home() / ".claude" / "projects"
+    cwd_encoded = "-" + str(Path.cwd()).replace("/", "-")
+    session_dir = projects_dir / cwd_encoded
+    if session_dir.exists():
+        shutil.rmtree(session_dir, ignore_errors=True)
 
     # ── Save artifacts ───────────────────────────────────────────
     # stdout.log

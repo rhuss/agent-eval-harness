@@ -124,14 +124,20 @@ def setup_subagent_hook(settings: dict, subagent_dir: str) -> None:
         subagent_dir: Absolute path to the directory where transcripts
             should be copied (e.g., /tmp/agent-eval/run-001/subagents).
     """
-    hook_script = (
-        f'mkdir -p {subagent_dir} && '
-        f'cp "$AGENT_TRANSCRIPT_PATH" {subagent_dir}/ 2>/dev/null; true'
+    # SubagentStop hook receives JSON on stdin with agent_transcript_path.
+    # Extract it with python and copy the file to our subagent dir.
+    hook_command = (
+        f'python3 -c "import json,sys,shutil,os;'
+        f" d=json.load(sys.stdin);"
+        f" p=d.get(\'agent_transcript_path\',\'\');"
+        f" os.makedirs(\'{subagent_dir}\',exist_ok=True);"
+        f" shutil.copy2(p,\'{subagent_dir}/\') if p and os.path.exists(p) else None"
+        f'"'
     )
     hooks = settings.setdefault("hooks", {})
     hooks.setdefault("SubagentStop", []).append({
         "hooks": [{
             "type": "command",
-            "command": f"bash -c '{hook_script}'",
+            "command": hook_command,
         }],
     })

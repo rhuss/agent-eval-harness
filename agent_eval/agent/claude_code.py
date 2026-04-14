@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -71,7 +72,9 @@ class ClaudeCodeRunner(EvalRunner):
             "--model", model,
             "--output-format", "stream-json" if self._log_prefix else "json",
             "--max-budget-usd", str(max_budget_usd),
-            "--no-session-persistence",
+            # Session persistence must stay ON so subagent transcript files
+            # survive long enough for the SubagentStop hook to copy them.
+            # The session directory is cleaned up post-run (see below).
         ]
         if self._log_prefix:
             cmd.append("--verbose")
@@ -178,6 +181,11 @@ class ClaudeCodeRunner(EvalRunner):
         duration = time.monotonic() - start
         stdout_text = "\n".join(stdout_lines)
 
+        # Clean up session directory now that SubagentStop hooks have fired
+        # and copied transcripts.  Without this, session files accumulate
+        # in ~/.claude/projects/ for every eval run.
+        self._cleanup_session(workspace)
+
         # Extract usage from collected stream-json lines
         raw_output = result_obj
         if not result_obj and stdout_text.strip():
@@ -203,6 +211,21 @@ class ClaudeCodeRunner(EvalRunner):
             models_used=sorted(models_seen) if models_seen else None,
             raw_output=raw_output,
         )
+
+    @staticmethod
+    def _cleanup_session(workspace: Path) -> None:
+        """Remove the Claude Code session directory for a workspace.
+
+        Claude Code stores sessions under ~/.claude/projects/<encoded-path>/.
+        The path encoding replaces '/' with '-' and prepends '-'.
+        """
+        projects_dir = Path.home() / ".claude" / "projects"
+        if not projects_dir.exists():
+            return
+        encoded = "-" + str(workspace).replace("/", "-")
+        session_dir = projects_dir / encoded
+        if session_dir.exists() and session_dir.is_dir():
+            shutil.rmtree(session_dir, ignore_errors=True)
 
     # Environment keys safe to forward to evaluated skills
     _SAFE_ENV_KEYS = {
