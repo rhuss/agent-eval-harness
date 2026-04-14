@@ -120,16 +120,18 @@ claude-trace --model opus -p "/rfe.speedrun ..."
   ├─ Launches: claude --print --model opus --output-format stream-json ...
   │  └─ Prompt via stdin or -p (passed through)
   │
+  ├─ Injects SubagentStop hook into .claude/settings.json
+  │  └─ Hook copies each subagent's .jsonl transcript to trace-dir/subagents/
+  │
   ├─ Captures stream-json output line by line:
   │  ├─ Injects synthetic user event (prompt — claude --print doesn't emit it)
-  │  ├─ Injects wall-clock timestamps on assistant events
-  │  ├─ Tracks background agent output files from tool_results
-  │  └─ Reads subagent .jsonl files on task_notification (before cleanup)
+  │  └─ Injects wall-clock timestamps on assistant events
   │
   ├─ After process exits:
   │  ├─ Saves stdout.log, run_result.json, subagents/*.jsonl
   │  ├─ Builds hierarchical MLflow trace via build_trace()
-  │  └─ Pushes trace to MLflow (unless --no-mlflow)
+  │  ├─ Pushes trace to MLflow (unless --no-mlflow)
+  │  └─ Cleans up session directory
   │
   └─ Exits with same exit code as claude
 ```
@@ -142,7 +144,7 @@ Skills that use background agents (Agent tool) produce separate conversation fil
 2. When each subagent finishes, the hook fires synchronously and copies its `.jsonl` transcript to a known directory
 3. The trace builder reads these files to create nested agent spans with tool calls and LLM reasoning
 
-This is simpler than the alternative (in-flight file reading while the process runs) and doesn't require session persistence.
+This is simpler than the alternative (in-flight file reading while the process runs). Session persistence stays on so transcript files exist when the hook fires; the session directory is cleaned up after execution.
 
 ### Why not the MLflow Stop hook?
 
@@ -163,7 +165,7 @@ agent_eval/
       ├─ make_prompt_event()    — synthetic user event for stdin prompt
       ├─ inject_timestamp()     — wall-clock timestamps on assistant events
       ├─ extract_usage()        — tokens, cost, turns, models from events
-      └─ SubagentCapture        — in-flight capture of background agent files
+      └─ setup_subagent_hook()  — SubagentStop hook for transcript capture
   mlflow/
     trace_builder.py       # Hierarchical trace builder
       ├─ build_trace()          — stream-json → MLflow trace dict
