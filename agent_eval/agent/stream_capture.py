@@ -147,6 +147,6 @@ def setup_subagent_hook(settings: dict, subagent_dir: str) -> None:
     hooks.setdefault("SubagentStop", []).append({
         "hooks": [{
             "type": "command",
-            "command": f"python3 {hook_script}",
+            "command": f"python3 '{hook_script}'",
         }],
     })

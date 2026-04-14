@@ -31,6 +31,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -84,7 +85,8 @@ def main():
     caller_settings = _extract_flag(claude_args, "--settings")
     if caller_settings and Path(caller_settings).exists():
         try:
-            settings = json.load(open(caller_settings))
+            with open(caller_settings) as f:
+                settings = json.load(f)
         except (json.JSONDecodeError, OSError):
             pass
     subagent_dir = str((trace_dir / "subagents").resolve())
@@ -115,7 +117,6 @@ def main():
     # Drain stderr in a background thread to avoid deadlock (CWE-400).
     # If claude fills the stderr pipe before stdout finishes, the child
     # blocks and this wrapper hangs.
-    import threading
     stderr_lines = []
     def _drain_stderr():
         for line in proc.stderr:

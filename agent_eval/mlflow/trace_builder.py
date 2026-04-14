@@ -7,6 +7,7 @@ and the standalone claude-trace wrapper.
 import json
 import os
 import re
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -218,7 +219,6 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
     # Source 2: background agent output files
     # Parse tool_results to map agentId → parent tool_use_id and find
     # output file paths, then read each file for its tool calls.
-    import re as _re
     _agent_to_parent = {}  # agentId -> parent_tool_use_id
     _agent_output_files = {}  # agentId -> output_file_path
 
@@ -239,8 +239,8 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
                                 if isinstance(x, dict))
             elif isinstance(c, str):
                 text = c
-            m_id = _re.search(r"agentId:\s*(\w+)", text)
-            m_file = _re.search(r"output_file:\s*(\S+)", text)
+            m_id = re.search(r"agentId:\s*(\w+)", text)
+            m_file = re.search(r"output_file:\s*(\S+)", text)
             if m_id:
                 _agent_to_parent[m_id.group(1)] = tuid
             if m_id and m_file:
@@ -441,15 +441,6 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
             for _, _, name, _ in seg_data:
                 tool_counts[name] = tool_counts.get(name, 0) + 1
 
-    response_summary = json.dumps({
-        "exit_code": run_result.get("exit_code"),
-        "cost_usd": cost_usd,
-        "duration_s": duration_s,
-        "num_turns": run_result.get("num_turns"),
-        "model": model,
-        "tool_counts": tool_counts,
-    })
-
     # Root span
     root_attrs = {
         "mlflow.traceRequestId": json.dumps(trace_id),
@@ -491,15 +482,15 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
     # Status-update texts (e.g. "RFE-014 created. 1/20 complete...")
     # are NOT new steps — they are progress notifications from background
     # agents and get merged into the preceding dispatch step.
-    _STATUS_RE = _re.compile(
+    _STATUS_RE = re.compile(
         r"^(RFE-\d+|RHAIRFE-\d+)\s+(created|submitted|reviewed|processed)"
         r".*\d+/\d+\s+(complete|done)",
-        _re.IGNORECASE,
+        re.IGNORECASE,
     )
     # Also catch "waiting" texts that are just polling updates
-    _WAITING_RE = _re.compile(
+    _WAITING_RE = re.compile(
         r"(waiting for|agents? (are |is )?(still )?(running|creating|processing))",
-        _re.IGNORECASE,
+        re.IGNORECASE,
     )
 
     steps = []  # list of (llm_text, llm_ts, llm_context, [batch_segments])
@@ -810,5 +801,5 @@ def log_trace(trace_dict):
         client._log_trace(trace)
         return trace_dict["info"]["trace_id"]
     except Exception as e:
-        print(f"WARNING: failed to log trace: {e}", file=__import__('sys').stderr)
+        print(f"WARNING: failed to log trace: {e}", file=sys.stderr)
         return None
