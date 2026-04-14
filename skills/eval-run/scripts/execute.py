@@ -126,13 +126,14 @@ def main():
     # Copy subagent transcripts captured by the SubagentStop hook.
     # The hook copies .jsonl files to workspace/subagents/ while the
     # session is still alive. We move them to the run output directory.
+    # Only copy regular .jsonl files — reject symlinks (CWE-59).
     ws_subagents = Path(args.workspace) / "subagents"
-    if ws_subagents.exists():
+    if ws_subagents.exists() and ws_subagents.is_dir():
         import shutil
         out_subagents = output_dir / "subagents"
         out_subagents.mkdir(exist_ok=True)
         for f in ws_subagents.iterdir():
-            if f.is_file():
+            if f.is_file() and not f.is_symlink() and f.suffix == ".jsonl":
                 shutil.copy2(f, out_subagents / f.name)
 
     full_model = result.resolved_model or args.model
@@ -152,8 +153,15 @@ def main():
         "agent": runner.name,
         "agent_version": getattr(runner, "version", ""),
     }
-    with open(output_dir / "run_result.json", "w") as f:
+    run_result_path = output_dir / "run_result.json"
+    with open(run_result_path, "w") as f:
         json.dump(run_meta, f, indent=2)
+        f.write("\n")
+
+    # Verify the file is valid JSON — catch write failures early rather than
+    # letting report.py fail later with an opaque JSONDecodeError.
+    with open(run_result_path) as f:
+        json.load(f)
 
     print(f"EXIT: {result.exit_code}")
     print(f"DURATION: {result.duration_s:.0f}s")

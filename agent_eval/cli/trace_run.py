@@ -51,9 +51,10 @@ def main():
     # Everything else passes through to claude.
     trace_args, claude_args, prompt = _parse_args(sys.argv[1:])
 
-    # Ensure stream-json output format
-    if "--output-format" not in claude_args:
-        claude_args.extend(["--output-format", "stream-json"])
+    # Force stream-json output — strip any conflicting --output-format
+    # that the caller may have passed (build_trace requires stream-json).
+    _strip_flag(claude_args, "--output-format")
+    claude_args.extend(["--output-format", "stream-json"])
     if "--print" not in claude_args:
         claude_args.insert(0, "--print")
     if "--verbose" not in claude_args:
@@ -76,19 +77,23 @@ def main():
                      f"tmp/trace-runs/{datetime.now().strftime('%Y%m%d-%H%M%S')}"))
     trace_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write a temporary settings.json with SubagentStop hook so
-    # background agent transcripts are captured to trace_dir/subagents/.
+    # Write settings.json with SubagentStop hook. If the caller passed
+    # --settings, load their file first and merge the hook into it.
     settings_dir = trace_dir / ".claude"
     settings_dir.mkdir(parents=True, exist_ok=True)
     settings = {}
+    caller_settings = _extract_flag(claude_args, "--settings")
+    if caller_settings and Path(caller_settings).exists():
+        try:
+            settings = json.load(open(caller_settings))
+        except (json.JSONDecodeError, OSError):
+            pass
     subagent_dir = str((trace_dir / "subagents").resolve())
     setup_subagent_hook(settings, subagent_dir)
-    import json as _json
-    with open(settings_dir / "settings.json", "w") as f:
-        _json.dump(settings, f, indent=2)
-    # Inject --settings if not already provided
-    if "--settings" not in claude_args:
-        cmd.extend(["--settings", str(settings_dir / "settings.json")])
+    merged_settings = settings_dir / "settings.json"
+    with open(merged_settings, "w") as f:
+        json.dump(settings, f, indent=2)
+    cmd.extend(["--settings", str(merged_settings)])
 
     # Session persistence must stay ON so subagent transcript files
     # survive long enough for the SubagentStop hook to copy them.
@@ -107,6 +112,17 @@ def main():
         stderr=subprocess.PIPE,
         text=True,
     )
+
+    # Drain stderr in a background thread to avoid deadlock (CWE-400).
+    # If claude fills the stderr pipe before stdout finishes, the child
+    # blocks and this wrapper hangs.
+    import threading
+    stderr_lines = []
+    def _drain_stderr():
+        for line in proc.stderr:
+            stderr_lines.append(line)
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stderr_thread.start()
 
     proc.stdin.write(prompt)
     proc.stdin.close()
@@ -137,8 +153,9 @@ def main():
             pass
         stdout_lines.append(line)
 
-    stderr = proc.stderr.read()
     proc.wait()
+    stderr_thread.join(timeout=5)
+    stderr = "".join(stderr_lines)
 
     duration = time.monotonic() - start
 
@@ -249,6 +266,35 @@ def _parse_args(argv):
             claude_args.append(arg)
             i += 1
     return trace_args, claude_args, prompt
+
+
+def _strip_flag(args, flag):
+    """Remove a flag and its value from args list (in place)."""
+    i = 0
+    while i < len(args):
+        if args[i] == flag and i + 1 < len(args):
+            del args[i:i + 2]
+        elif args[i].startswith(f"{flag}="):
+            del args[i]
+        else:
+            i += 1
+
+
+def _extract_flag(args, flag):
+    """Remove a flag from args and return its value (or None)."""
+    i = 0
+    while i < len(args):
+        if args[i] == flag and i + 1 < len(args):
+            val = args[i + 1]
+            del args[i:i + 2]
+            return val
+        elif args[i].startswith(f"{flag}="):
+            val = args[i].split("=", 1)[1]
+            del args[i]
+            return val
+        else:
+            i += 1
+    return None
 
 
 if __name__ == "__main__":

@@ -226,6 +226,35 @@ def _expand_symlink_permissions(allow_list):
     return allow_list + extras
 
 
+def _carry_over_permissions(settings):
+    """Copy project permissions (allow, deny, additionalDirectories) into settings."""
+    import json as _json
+
+    project_settings = Path.cwd() / ".claude" / "settings.json"
+    if not project_settings.exists():
+        return
+    try:
+        with open(project_settings) as f:
+            proj = _json.load(f)
+    except (_json.JSONDecodeError, OSError):
+        return
+
+    proj_perms = proj.get("permissions", {})
+    if proj_perms.get("allow"):
+        allow_list = _expand_symlink_permissions(list(proj_perms["allow"]))
+        settings.setdefault("permissions", {})["allow"] = allow_list
+    if proj_perms.get("deny"):
+        settings.setdefault("permissions", {})["deny"] = list(proj_perms["deny"])
+    if proj_perms.get("additionalDirectories"):
+        dirs = list(proj_perms["additionalDirectories"])
+        for d in list(dirs):
+            resolved = str(Path(d).resolve())
+            if resolved != d and resolved not in dirs:
+                dirs.append(resolved)
+        settings.setdefault("permissions", {}).setdefault(
+            "additionalDirectories", []).extend(dirs)
+
+
 def _setup_subagent_only_hook(workspace):
     """Set up SubagentStop hook without tool interception.
 
@@ -241,26 +270,8 @@ def _setup_subagent_only_hook(workspace):
 
     settings = {}
 
-    # Carry over project permissions
-    project_settings = Path.cwd() / ".claude" / "settings.json"
-    if project_settings.exists():
-        try:
-            with open(project_settings) as f:
-                proj = _json.load(f)
-            proj_perms = proj.get("permissions", {})
-            if proj_perms.get("allow"):
-                allow_list = _expand_symlink_permissions(list(proj_perms["allow"]))
-                settings.setdefault("permissions", {})["allow"] = allow_list
-            if proj_perms.get("additionalDirectories"):
-                dirs = list(proj_perms["additionalDirectories"])
-                for d in list(dirs):
-                    resolved = str(Path(d).resolve())
-                    if resolved != d and resolved not in dirs:
-                        dirs.append(resolved)
-                settings.setdefault("permissions", {}).setdefault(
-                    "additionalDirectories", []).extend(dirs)
-        except (_json.JSONDecodeError, OSError):
-            pass
+    # Carry over project permissions (allow, deny, additionalDirectories)
+    _carry_over_permissions(settings)
 
     # Grant project root access
     project_root = str(Path.cwd().resolve())
@@ -350,31 +361,8 @@ def _setup_tool_hooks(workspace, config):
             }],
         })
 
-    # Carry over permissions from the project's settings.json so the skill
-    # retains its allowed tool patterns in the workspace (headless --print
-    # mode still requires explicit permission for Bash commands, etc.)
-    project_settings = Path.cwd() / ".claude" / "settings.json"
-    if project_settings.exists():
-        try:
-            with open(project_settings) as f:
-                proj = _json.load(f)
-            proj_perms = proj.get("permissions", {})
-            if proj_perms.get("allow"):
-                allow_list = list(proj_perms["allow"])
-                # Resolve symlinked paths (e.g., macOS /tmp → /private/tmp)
-                # so permission patterns match canonical paths.
-                allow_list = _expand_symlink_permissions(allow_list)
-                settings.setdefault("permissions", {})["allow"] = allow_list
-            if proj_perms.get("additionalDirectories"):
-                dirs = list(proj_perms["additionalDirectories"])
-                for d in list(dirs):
-                    resolved = str(Path(d).resolve())
-                    if resolved != d and resolved not in dirs:
-                        dirs.append(resolved)
-                settings.setdefault("permissions", {}).setdefault(
-                    "additionalDirectories", []).extend(dirs)
-        except (_json.JSONDecodeError, OSError):
-            pass
+    # Carry over permissions (allow, deny, additionalDirectories)
+    _carry_over_permissions(settings)
 
     # Grant access to the project root so symlinked resources (skills,
     # scripts, context) can be read by the sandbox.

@@ -254,33 +254,18 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
         parent_tuid = _agent_to_parent.get(agent_id)
         if not parent_tuid or parent_tuid in subagent_children:
             continue  # already have inline children
-        # Try original path first, then fall back to saved copy,
-        # then try resolving the symlink target, then search the
-        # .claude/projects/ session directory.
-        if not os.path.exists(output_path):
-            fallback = _subagent_dir / f"{agent_id}.jsonl"
-            if fallback.exists():
-                output_path = str(fallback)
-            else:
-                # Try resolving symlink (may point to .claude/projects/)
-                try:
-                    _real = os.path.realpath(output_path)
-                    if os.path.exists(_real):
-                        output_path = _real
-                    else:
-                        # Search .claude/projects/ for the file
-                        from pathlib import Path as _P
-                        _found = False
-                        for _sd in _P.home().glob(
-                                f".claude/projects/*/*/subagents/"
-                                f"agent-{agent_id}.jsonl"):
-                            output_path = str(_sd)
-                            _found = True
-                            break
-                        if not _found:
-                            continue
-                except OSError:
-                    continue
+        # Prefer the SubagentStop hook's saved copy in _subagent_dir.
+        # Only fall back to the original path if it's a regular file
+        # (not a symlink) to avoid path traversal (CWE-22).
+        safe_copy = _subagent_dir / f"agent-{agent_id}.jsonl"
+        if not safe_copy.exists():
+            safe_copy = _subagent_dir / f"{agent_id}.jsonl"
+        if safe_copy.exists() and safe_copy.is_file():
+            output_path = str(safe_copy)
+        elif os.path.exists(output_path) and os.path.isfile(output_path) and not os.path.islink(output_path):
+            pass  # use original path
+        else:
+            continue
         try:
             with open(output_path) as f:
                 for line in f:
@@ -805,7 +790,14 @@ def summarize_tool_input(tool_name, tool_input):
 
 
 def log_trace(trace_dict):
-    """Submit a trace dict to MLflow. Returns trace_id or None."""
+    """Submit a trace dict to MLflow. Returns trace_id or None.
+
+    Uses MlflowClient._log_trace (internal API) as MLflow 3.5 has no
+    public API for logging pre-built Trace objects. The public fluent
+    API (mlflow.start_span, @mlflow.trace) requires live instrumentation
+    and can't accept a pre-constructed trace dict. If a public method
+    becomes available, this should be updated.
+    """
     try:
         import mlflow
         from mlflow import MlflowClient
@@ -813,6 +805,8 @@ def log_trace(trace_dict):
 
         trace = Trace.from_dict(trace_dict)
         client = MlflowClient()
+        # No public API for logging pre-built traces as of MLflow 3.5.
+        # _log_trace is the only way to submit a Trace object.
         client._log_trace(trace)
         return trace_dict["info"]["trace_id"]
     except Exception as e:

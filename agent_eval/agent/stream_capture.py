@@ -112,32 +112,36 @@ def extract_usage(stdout_lines):
 def setup_subagent_hook(settings: dict, subagent_dir: str) -> None:
     """Add a SubagentStop hook to settings that copies transcripts.
 
-    The SubagentStop hook fires synchronously when a subagent finishes,
-    while the transcript file still exists. The hook copies it to a
-    known location before Claude Code cleans up the session.
-
-    This replaces the old in-flight capture approach (SubagentCapture)
-    which required session persistence and complex multi-phase reads.
+    The SubagentStop hook fires synchronously when a subagent finishes.
+    Session persistence must be ON (do NOT pass --no-session-persistence)
+    so the transcript file still exists when the hook runs.
 
     Args:
         settings: The workspace .claude/settings.json dict (modified in place).
         subagent_dir: Absolute path to the directory where transcripts
             should be copied (e.g., /tmp/agent-eval/run-001/subagents).
     """
-    # SubagentStop hook receives JSON on stdin with agent_transcript_path.
-    # Extract it with python and copy the file to our subagent dir.
-    hook_command = (
-        f'python3 -c "import json,sys,shutil,os;'
-        f" d=json.load(sys.stdin);"
-        f" p=d.get(\'agent_transcript_path\',\'\');"
-        f" os.makedirs(\'{subagent_dir}\',exist_ok=True);"
-        f" shutil.copy2(p,\'{subagent_dir}/\') if p and os.path.exists(p) else None"
-        f'"'
+    # Write a small helper script instead of inlining shell — avoids
+    # command injection via subagent_dir (CWE-78) and handles the
+    # stdin JSON parsing cleanly.
+    hook_script = Path(subagent_dir).parent / "hooks" / "subagent_stop.py"
+    hook_script.parent.mkdir(parents=True, exist_ok=True)
+    hook_script.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys, shutil, os\n"
+        "d = json.load(sys.stdin)\n"
+        "p = d.get('agent_transcript_path', '')\n"
+        f"dest = {subagent_dir!r}\n"
+        "if p and os.path.isfile(p) and not os.path.islink(p):\n"
+        "    os.makedirs(dest, exist_ok=True)\n"
+        "    shutil.copy2(p, os.path.join(dest, os.path.basename(p)))\n"
     )
+    hook_script.chmod(0o755)
+
     hooks = settings.setdefault("hooks", {})
     hooks.setdefault("SubagentStop", []).append({
         "hooks": [{
             "type": "command",
-            "command": hook_command,
+            "command": f"python3 {hook_script}",
         }],
     })
