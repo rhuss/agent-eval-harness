@@ -59,7 +59,7 @@ class TestExtractSummary:
         run_result = {"exit_code": 0, "duration_s": 10, "cost_usd": 0.10,
                       "num_turns": 5, "model": "claude-sonnet-4-5",
                       "token_usage": {"input": 100, "output": 50}}
-        prompt, response, intermediate = extract_summary(events, run_result)
+        _prompt, response, intermediate = extract_summary(events, run_result)
         assert response["total_tool_calls"] == 1
         tool_names = [tc["tool"] for tc in intermediate["tool_calls"]]
         assert "Bash" in tool_names
@@ -78,5 +78,5 @@ class TestExtractSummary:
         run_result = {"exit_code": 0, "duration_s": 10, "cost_usd": 0.10,
                       "num_turns": 5, "model": "claude-sonnet-4-5",
                       "token_usage": {"input": 100, "output": 50}}
-        _, response, intermediate = extract_summary(events, run_result)
+        _, response, _intermediate = extract_summary(events, run_result)
         assert response["total_tool_calls"] == 2

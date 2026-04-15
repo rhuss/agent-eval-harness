@@ -254,18 +254,23 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
         parent_tuid = _agent_to_parent.get(agent_id)
         if not parent_tuid or parent_tuid in subagent_children:
             continue  # already have inline children
-        # Prefer the SubagentStop hook's saved copy in _subagent_dir.
-        # Only fall back to the original path if it's a regular file
-        # (not a symlink) to avoid path traversal (CWE-22).
+        # Only read from the SubagentStop hook's saved copies in
+        # _subagent_dir.  Never open output_path from stream content
+        # directly — it's untrusted input (CWE-22/CWE-73).
         safe_copy = _subagent_dir / f"agent-{agent_id}.jsonl"
         if not safe_copy.exists():
             safe_copy = _subagent_dir / f"{agent_id}.jsonl"
-        if safe_copy.exists() and safe_copy.is_file():
-            output_path = str(safe_copy)
-        elif os.path.exists(output_path) and os.path.isfile(output_path) and not os.path.islink(output_path):
-            pass  # use original path
-        else:
+        if not (safe_copy.exists() and safe_copy.is_file()
+                and not safe_copy.is_symlink()):
             continue
+        # Verify resolved path stays under _subagent_dir
+        try:
+            resolved = safe_copy.resolve(strict=True)
+            if not resolved.is_relative_to(_subagent_dir.resolve()):
+                continue
+        except (OSError, ValueError):
+            continue
+        output_path = str(resolved)
         try:
             with open(output_path) as f:
                 for line in f:

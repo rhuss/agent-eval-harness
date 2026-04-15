@@ -10,7 +10,7 @@ class TestExtractUsage:
         """extract_usage returns a 6-tuple including the seen_msg_ids set."""
         result = extract_usage(post_2_1_108_stream["lines"])
         assert len(result) == 6
-        token_usage, cost_usd, num_turns, seen_msg_ids, models_seen, per_model_usage = result
+        _, _, num_turns, seen_msg_ids, _, _ = result
         assert isinstance(seen_msg_ids, set)
         assert len(seen_msg_ids) == num_turns
 

@@ -67,8 +67,8 @@ class TestBuildTrace:
         assert trace["info"]["trace_id"]
         spans = trace["data"]["spans"]
         assert len(spans) > 0
-        # Root span should be AGENT type
-        root = spans[0]
+        # Root span (no parent) should be AGENT type
+        root = next(s for s in spans if s["parent_span_id"] is None)
         assert _get_span_type(root) == "AGENT"
 
     def test_skips_subagent_in_top_segments(self, tmp_path):
@@ -89,17 +89,18 @@ class TestBuildTrace:
                             run_id="test-run", experiment_id="exp-001")
         assert trace is not None
         spans = trace["data"]["spans"]
-        # Find all TOOL-type spans at the non-root level
+        root = next(s for s in spans if s["parent_span_id"] is None)
+        # Find all TOOL-type spans
         tool_spans = [s for s in spans if _get_span_type(s) == "TOOL"]
         tool_names = [s["name"] for s in tool_spans]
         # Bash should be present as a top-level tool span
         assert any("Bash" in n for n in tool_names)
-        # The subagent's Read should NOT be a top-level tool span
+        # The subagent's Read should NOT be a direct child of root
         # (it should be nested under an Agent span, if at all)
         top_level_reads = [
             s for s in tool_spans
             if "Read" in s["name"]
-            and s["parent_span_id"] == spans[0]["span_id"]  # direct child of root
+            and s["parent_span_id"] == root["span_id"]
         ]
         assert len(top_level_reads) == 0
 

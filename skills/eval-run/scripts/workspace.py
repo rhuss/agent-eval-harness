@@ -286,7 +286,7 @@ def _setup_subagent_only_hook(workspace):
     with open(settings_dir / "settings.json", "w") as f:
         _json.dump(settings, f, indent=2)
 
-    print(f"HOOKS: SubagentStop configured (subagent capture)")
+    print("HOOKS: SubagentStop configured (subagent capture)")
 
 
 def _extract_tool_patterns(match_text):
