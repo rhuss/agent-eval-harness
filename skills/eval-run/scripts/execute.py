@@ -147,6 +147,7 @@ def main():
         "duration_s": round(result.duration_s, 1),
         "token_usage": result.token_usage,
         "cost_usd": result.cost_usd,
+        "per_model_usage": result.per_model_usage,
         "num_turns": result.num_turns,
         "model": full_model,
         "subagent_model": subagent_model_str,

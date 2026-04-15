@@ -40,6 +40,7 @@ from agent_eval.agent.stream_capture import (
     make_prompt_event,
     inject_timestamp,
     extract_usage,
+    count_subagent_turns,
     setup_subagent_hook,
 )
 
@@ -174,12 +175,18 @@ def main():
         (trace_dir / "stderr.log").write_text(stderr)
 
     # run_result.json
-    token_usage, cost_usd, num_turns, models_seen = extract_usage(stdout_lines)
+    token_usage, cost_usd, num_turns, models_seen, per_model_usage = extract_usage(stdout_lines)
+    # Add subagent turns from captured transcripts
+    subagent_dir = trace_dir / "subagents"
+    subagent_turns = count_subagent_turns(subagent_dir)
+    if num_turns and subagent_turns:
+        num_turns += subagent_turns
     run_result = {
         "exit_code": proc.returncode,
         "duration_s": round(duration, 1),
         "token_usage": token_usage,
         "cost_usd": cost_usd,
+        "per_model_usage": per_model_usage,
         "num_turns": num_turns,
         "model": resolved_model or "",
         "agent": "claude-code",

@@ -54,14 +54,20 @@ def extract_usage(stdout_lines):
 
     - Token totals: from ``result.modelUsage`` (includes all subagents).
       Falls back to summing ``assistant`` event usage if modelUsage is absent.
-    - Cost: from the last ``result`` event (cumulative in Claude Code).
-    - Turns: count of unique ``assistant`` messages (by message ID).
-      Claude Code stream-json emits multiple ``assistant`` events per API
-      turn (one per content block), so counting raw events overcounts.
+    - Cost: from the last ``result`` event (cumulative in Claude Code,
+      includes all subagents).
+    - Per-model usage: from ``result.modelUsage``, with per-model ``costUSD``,
+      token counts, and context window info.
+    - Turns: count of unique ``assistant`` messages (by message ID) in the
+      parent session.  Call :func:`count_subagent_turns` separately to get
+      subagent turns from captured transcripts.
     - Models: all distinct models observed in ``assistant`` events.
 
     Returns:
-        Tuple of (token_usage, cost_usd, num_turns, models_seen).
+        Tuple of (token_usage, cost_usd, num_turns, models_seen, per_model_usage).
+        ``num_turns`` counts only the parent session.
+        ``per_model_usage`` is a dict mapping model name to token/cost breakdown,
+        or None if modelUsage was absent.
     """
     cost_usd = None
     models_seen = set()
@@ -92,13 +98,26 @@ def extract_usage(stdout_lines):
                 model_usage = mu
 
     token_usage = None
+    per_model_usage = None
     if model_usage:
         total_input = total_output = total_cache_read = total_cache_create = 0
-        for stats in model_usage.values():
-            total_input += stats.get("inputTokens", 0)
-            total_output += stats.get("outputTokens", 0)
-            total_cache_read += stats.get("cacheReadInputTokens", 0)
-            total_cache_create += stats.get("cacheCreationInputTokens", 0)
+        per_model_usage = {}
+        for model_name, stats in model_usage.items():
+            m_input = stats.get("inputTokens", 0)
+            m_output = stats.get("outputTokens", 0)
+            m_cache_read = stats.get("cacheReadInputTokens", 0)
+            m_cache_create = stats.get("cacheCreationInputTokens", 0)
+            total_input += m_input
+            total_output += m_output
+            total_cache_read += m_cache_read
+            total_cache_create += m_cache_create
+            per_model_usage[model_name] = {
+                "input": m_input,
+                "output": m_output,
+                "cache_read": m_cache_read,
+                "cache_create": m_cache_create,
+                "cost_usd": stats.get("costUSD"),
+            }
         token_usage = {
             "input": total_input, "output": total_output,
             "cache_read": total_cache_read, "cache_create": total_cache_create,
@@ -109,7 +128,48 @@ def extract_usage(stdout_lines):
             "cache_read": fb_cache_read, "cache_create": fb_cache_create,
         }
     num_turns = len(seen_msg_ids) or None
-    return token_usage, cost_usd, num_turns, models_seen
+    return token_usage, cost_usd, num_turns, models_seen, per_model_usage
+
+
+# ── Subagent turn counting ──────────────────────────────────────────
+
+def count_subagent_turns(subagent_dir):
+    """Count unique assistant turns across all subagent transcripts.
+
+    Subagent transcripts are JSONL files captured by the SubagentStop hook.
+    Each line is a message object with ``message.role`` and ``message.id``.
+    Multiple JSONL lines can share the same message ID (one per content
+    block), so we deduplicate by ID.
+
+    Args:
+        subagent_dir: Path to directory containing ``*.jsonl`` transcripts.
+
+    Returns:
+        Number of unique assistant turns across all subagents, or 0 if
+        the directory doesn't exist or has no transcripts.
+    """
+    subagent_path = Path(subagent_dir)
+    if not subagent_path.is_dir():
+        return 0
+    seen = set()
+    for transcript in subagent_path.iterdir():
+        if not transcript.is_file() or transcript.suffix != ".jsonl":
+            continue
+        try:
+            with open(transcript) as f:
+                for line in f:
+                    try:
+                        obj = json.loads(line)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    msg = obj.get("message", {})
+                    if msg.get("role") == "assistant":
+                        msg_id = msg.get("id")
+                        if msg_id:
+                            seen.add(msg_id)
+        except OSError:
+            continue
+    return len(seen)
 
 
 # ── Subagent capture via hooks ───────────────────────────────────────

@@ -467,8 +467,12 @@ agent_eval/              # Python package (config, runner, state)
   agent/
     base.py              # EvalRunner ABC + RunResult
     claude_code.py       # Claude Code CLI runner
+    stream_capture.py    # Stream-json processing + SubagentStop hook
   mlflow/
     experiment.py        # MLflow experiment setup
+    trace_builder.py     # Hierarchical trace builder
+  cli/
+    trace_run.py         # claude-trace CLI
 
 skills/
   eval-setup/            # Environment setup

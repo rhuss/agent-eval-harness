@@ -50,7 +50,7 @@ claude-trace --model opus \
 
 Logs are saved to `runs/YYYYMMDD/`:
 - `stdout.log` — full stream-json event log
-- `run_result.json` — execution metadata (exit code, duration, cost, tokens, model)
+- `run_result.json` — execution metadata (exit code, duration, cost, tokens, model, per-model usage)
 - `subagents/*.jsonl` — background agent conversation files
 
 The trace is pushed to MLflow automatically.
@@ -130,8 +130,7 @@ claude-trace --model opus -p "/rfe.speedrun ..."
   ├─ After process exits:
   │  ├─ Saves stdout.log, run_result.json, subagents/*.jsonl
   │  ├─ Builds hierarchical MLflow trace via build_trace()
-  │  ├─ Pushes trace to MLflow (unless --no-mlflow)
-  │  └─ Cleans up session directory
+  │  └─ Pushes trace to MLflow (unless --no-mlflow)
   │
   └─ Exits with same exit code as claude
 ```
@@ -164,7 +163,8 @@ agent_eval/
     stream_capture.py      # Reusable stream-json processing
       ├─ make_prompt_event()    — synthetic user event for stdin prompt
       ├─ inject_timestamp()     — wall-clock timestamps on assistant events
-      ├─ extract_usage()        — tokens, cost, turns, models from events
+      ├─ extract_usage()        — tokens, cost, turns, models, per-model breakdown
+      ├─ count_subagent_turns() — count turns from captured subagent transcripts
       └─ setup_subagent_hook()  — SubagentStop hook for transcript capture
   mlflow/
     trace_builder.py       # Hierarchical trace builder

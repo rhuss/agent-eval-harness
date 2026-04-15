@@ -11,7 +11,8 @@ from typing import Optional
 
 from .base import EvalRunner, RunResult
 from .stream_capture import (
-    make_prompt_event, inject_timestamp, extract_usage, setup_subagent_hook
+    make_prompt_event, inject_timestamp, extract_usage,
+    count_subagent_turns, setup_subagent_hook,
 )
 
 _print_lock = threading.Lock()
@@ -160,7 +161,11 @@ class ClaudeCodeRunner(EvalRunner):
             proc.kill()
             proc.wait()
             duration = time.monotonic() - start
-            token_usage, cost_usd, num_turns, models_seen = extract_usage(stdout_lines)
+            token_usage, cost_usd, num_turns, models_seen, per_model_usage = extract_usage(stdout_lines)
+            # Add subagent turns from captured transcripts
+            subagent_turns = count_subagent_turns(workspace / "subagents")
+            if num_turns and subagent_turns:
+                num_turns += subagent_turns
             return RunResult(
                 exit_code=-1,
                 stdout="\n".join(stdout_lines),
@@ -171,6 +176,7 @@ class ClaudeCodeRunner(EvalRunner):
                 num_turns=num_turns,
                 resolved_model=resolved_model,
                 models_used=sorted(models_seen) if models_seen else None,
+                per_model_usage=per_model_usage,
             )
         except Exception as e:
             duration = time.monotonic() - start
@@ -195,9 +201,14 @@ class ClaudeCodeRunner(EvalRunner):
             except json.JSONDecodeError:
                 pass
 
-        token_usage, cost_usd, num_turns, models_seen = extract_usage(stdout_lines)
+        token_usage, cost_usd, num_turns, models_seen, per_model_usage = extract_usage(stdout_lines)
         if not cost_usd and isinstance(result_obj, dict):
             cost_usd = result_obj.get("total_cost_usd")
+
+        # Add subagent turns from captured transcripts
+        subagent_turns = count_subagent_turns(workspace / "subagents")
+        if num_turns and subagent_turns:
+            num_turns += subagent_turns
 
         return RunResult(
             exit_code=proc.returncode,
@@ -209,6 +220,7 @@ class ClaudeCodeRunner(EvalRunner):
             num_turns=num_turns,
             resolved_model=resolved_model,
             models_used=sorted(models_seen) if models_seen else None,
+            per_model_usage=per_model_usage,
             raw_output=raw_output,
         )
 

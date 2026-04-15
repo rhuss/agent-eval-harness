@@ -107,6 +107,22 @@ def main():
                 if val is not None:
                     mlflow.log_metric(f"tokens/{key}", val)
 
+        # ── Per-model cost and token breakdown ───────────────────
+        per_model = run_result.get("per_model_usage", {})
+        if per_model:
+            for model_name, stats in per_model.items():
+                # Sanitize model name for MLflow metric keys:
+                # only alphanumerics, underscores, dashes, periods, spaces,
+                # colons, and slashes are allowed.
+                safe_name = model_name.replace("@", "-")
+                prefix = f"model/{safe_name}"
+                if stats.get("cost_usd") is not None:
+                    mlflow.log_metric(f"{prefix}/cost_usd", stats["cost_usd"])
+                for key in ("input", "output", "cache_read", "cache_create"):
+                    val = stats.get(key)
+                    if val is not None:
+                        mlflow.log_metric(f"{prefix}/tokens/{key}", val)
+
         # ── Judge metrics ────────────────────────────────────────
         judges = summary.get("judges", {})
         metric_count = 0
