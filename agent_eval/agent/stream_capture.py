@@ -58,14 +58,19 @@ def extract_usage(stdout_lines):
       includes all subagents).
     - Per-model usage: from ``result.modelUsage``, with per-model ``costUSD``,
       token counts, and context window info.
-    - Turns: count of unique ``assistant`` messages (by message ID) in the
-      parent session.  Call :func:`count_subagent_turns` separately to get
-      subagent turns from captured transcripts.
+    - Turns: count of unique ``assistant`` messages (by message ID) visible
+      in the stream.  Since Claude Code >= 2.1.108 streams subagent messages
+      too (with ``parent_tool_use_id``), this includes both root and subagent
+      turns.  Call :func:`count_subagent_turns` and merge with
+      :attr:`seen_msg_ids` to get the correct total without double-counting.
     - Models: all distinct models observed in ``assistant`` events.
 
     Returns:
-        Tuple of (token_usage, cost_usd, num_turns, models_seen, per_model_usage).
-        ``num_turns`` counts only the parent session.
+        Tuple of (token_usage, cost_usd, num_turns, seen_msg_ids,
+        models_seen, per_model_usage).
+        ``num_turns`` counts all assistant turns visible in the stream.
+        ``seen_msg_ids`` is the set of message IDs for deduplication with
+        subagent transcripts.
         ``per_model_usage`` is a dict mapping model name to token/cost breakdown,
         or None if modelUsage was absent.
     """
@@ -128,12 +133,12 @@ def extract_usage(stdout_lines):
             "cache_read": fb_cache_read, "cache_create": fb_cache_create,
         }
     num_turns = len(seen_msg_ids) or None
-    return token_usage, cost_usd, num_turns, models_seen, per_model_usage
+    return token_usage, cost_usd, num_turns, seen_msg_ids, models_seen, per_model_usage
 
 
 # ── Subagent turn counting ──────────────────────────────────────────
 
-def count_subagent_turns(subagent_dir):
+def count_subagent_turns(subagent_dir, already_seen=None):
     """Count unique assistant turns across all subagent transcripts.
 
     Subagent transcripts are JSONL files captured by the SubagentStop hook.
@@ -141,17 +146,24 @@ def count_subagent_turns(subagent_dir):
     Multiple JSONL lines can share the same message ID (one per content
     block), so we deduplicate by ID.
 
+    Since Claude Code >= 2.1.108 streams subagent messages in the main
+    stdout stream, some IDs may already appear in :func:`extract_usage`
+    results.  Pass ``already_seen`` to avoid double-counting.
+
     Args:
         subagent_dir: Path to directory containing ``*.jsonl`` transcripts.
+        already_seen: Optional set of message IDs already counted from the
+            stream.  If provided, only IDs not in this set are counted.
 
     Returns:
-        Number of unique assistant turns across all subagents, or 0 if
-        the directory doesn't exist or has no transcripts.
+        Number of unique NEW assistant turns (not in ``already_seen``),
+        or 0 if the directory doesn't exist or has no transcripts.
     """
     subagent_path = Path(subagent_dir)
     if not subagent_path.is_dir():
         return 0
-    seen = set()
+    seen = set(already_seen) if already_seen else set()
+    initial_count = len(seen)
     for transcript in subagent_path.iterdir():
         if not transcript.is_file() or transcript.suffix != ".jsonl":
             continue
@@ -169,7 +181,7 @@ def count_subagent_turns(subagent_dir):
                             seen.add(msg_id)
         except OSError:
             continue
-    return len(seen)
+    return len(seen) - initial_count
 
 
 # ── Subagent capture via hooks ───────────────────────────────────────

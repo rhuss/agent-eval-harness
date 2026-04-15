@@ -161,11 +161,12 @@ class ClaudeCodeRunner(EvalRunner):
             proc.kill()
             proc.wait()
             duration = time.monotonic() - start
-            token_usage, cost_usd, num_turns, models_seen, per_model_usage = extract_usage(stdout_lines)
-            # Add subagent turns from captured transcripts
-            subagent_turns = count_subagent_turns(workspace / "subagents")
-            if num_turns and subagent_turns:
-                num_turns += subagent_turns
+            token_usage, cost_usd, num_turns, stream_ids, models_seen, per_model_usage = extract_usage(stdout_lines)
+            # Add subagent turns from captured transcripts, deduplicating
+            # against IDs already seen in the stream
+            subagent_turns = count_subagent_turns(workspace / "subagents", already_seen=stream_ids)
+            if subagent_turns:
+                num_turns = (num_turns or 0) + subagent_turns
             return RunResult(
                 exit_code=-1,
                 stdout="\n".join(stdout_lines),
@@ -201,14 +202,16 @@ class ClaudeCodeRunner(EvalRunner):
             except json.JSONDecodeError:
                 pass
 
-        token_usage, cost_usd, num_turns, models_seen, per_model_usage = extract_usage(stdout_lines)
+        token_usage, cost_usd, num_turns, stream_ids, models_seen, per_model_usage = extract_usage(stdout_lines)
         if not cost_usd and isinstance(result_obj, dict):
             cost_usd = result_obj.get("total_cost_usd")
 
-        # Add subagent turns from captured transcripts
-        subagent_turns = count_subagent_turns(workspace / "subagents")
-        if num_turns and subagent_turns:
-            num_turns += subagent_turns
+        # Add subagent turns from captured transcripts, deduplicating
+        # against IDs already seen in the stream (Claude Code >= 2.1.108
+        # streams subagent messages in stdout too)
+        subagent_turns = count_subagent_turns(workspace / "subagents", already_seen=stream_ids)
+        if subagent_turns:
+            num_turns = (num_turns or 0) + subagent_turns
 
         return RunResult(
             exit_code=proc.returncode,
