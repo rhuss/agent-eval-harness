@@ -455,7 +455,7 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
     }
     if cost_usd:
         root_attrs["mlflow.llm.cost"] = json.dumps({
-            "input_cost": 0, "output_cost": 0, "total_cost": cost_usd,
+            "total_cost": cost_usd,
         })
     if model:
         root_attrs["mlflow.llm.model"] = json.dumps(model)
@@ -723,7 +723,7 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
     trace_metadata = {}
     if cost_usd:
         trace_metadata["mlflow.trace.cost"] = json.dumps({
-            "input_cost": 0, "output_cost": 0, "total_cost": cost_usd,
+            "total_cost": cost_usd,
         })
     if token_usage:
         input_tokens = (token_usage.get("input", 0)
