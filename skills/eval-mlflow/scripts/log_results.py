@@ -87,6 +87,8 @@ def main():
             "run_id": args.run_id,
             "model": run_result.get("model", ""),
         }
+        if run_result.get("subagent_model"):
+            params["subagent_model"] = run_result["subagent_model"]
         if run_result.get("agent"):
             params["agent"] = run_result["agent"]
         for key, value in params.items():
@@ -185,7 +187,9 @@ def main():
     if stdout_path.exists() and run_result:
         trace_name = f"{config.skill} ({args.run_id})" if config.skill else ""
         trace_dict = build_trace(stdout_path, run_result, args.run_id,
-                                 experiment_id, trace_name=trace_name)
+                                 experiment_id, trace_name=trace_name,
+                                 subagent_model=run_result.get(
+                                     "subagent_model"))
         if trace_dict:
             main_trace_id = log_trace(trace_dict)
             if main_trace_id:

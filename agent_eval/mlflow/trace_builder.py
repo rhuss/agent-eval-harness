@@ -49,7 +49,8 @@ def make_span(trace_id, parent_id, name, span_type, start_ns, end_ns,
 
 
 def build_trace(stdout_path, run_result, run_id, experiment_id,
-                trace_name="", subagent_dir=None):
+                trace_name="", subagent_dir=None,
+                subagent_model=None):
     """Build a hierarchical MLflow Trace from the stream-json stdout log.
 
     Structure:
@@ -438,6 +439,8 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
     token_usage = run_result.get("token_usage", {})
     cost_usd = run_result.get("cost_usd")
     model = run_result.get("model", "")
+    _subagent_model = subagent_model or run_result.get("subagent_model") or model
+    per_model_usage = run_result.get("per_model_usage", {})
 
     # Count tools
     tool_counts = {}
@@ -458,12 +461,9 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
         "run_id": json.dumps(run_id),
         "model": json.dumps(model),
     }
-    if cost_usd:
-        root_attrs["mlflow.llm.cost"] = json.dumps({
-            "total_cost": cost_usd,
-        })
-    if model:
-        root_attrs["mlflow.llm.model"] = json.dumps(model)
+    # NOTE: Do NOT set mlflow.llm.cost on the root AGENT span.
+    # Per-model costs are distributed across individual LLM spans;
+    # setting it here would double-count in the "Cost Over Time" chart.
 
     spans = [{
         "trace_id": trace_id,
@@ -676,7 +676,7 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
                             # LLM reasoning span
                             _llm_idx += 1
                             llm_text = c_name  # text stored in name slot
-                            sa_llm_inputs = {"model": model}
+                            sa_llm_inputs = {"model": _subagent_model}
                             if _sa_recent_tools:
                                 sa_llm_inputs["context"] = (
                                     "; ".join(_sa_recent_tools))
@@ -689,6 +689,10 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
                                 end_ns=sa_start + int(0.5e9),
                                 inputs=sa_llm_inputs,
                                 outputs={"text": llm_text[:500]},
+                                extra_attrs=(
+                                    {"mlflow.llm.model":
+                                     json.dumps(_subagent_model)}
+                                    if _subagent_model else None),
                             ))
                             sa_start += int(0.5e9)
                         else:
@@ -724,12 +728,62 @@ def build_trace(stdout_path, run_result, run_id, experiment_id,
 
         cursor_ns = step_end
 
+    # ── Distribute per-model cost across LLM spans ─────────────
+    # The "Cost Over Time" chart aggregates mlflow.llm.cost from
+    # individual LLM spans grouped by mlflow.llm.model.  Distribute
+    # each model's total cost evenly across its LLM spans so the
+    # chart totals match run_result.per_model_usage.
+    if per_model_usage:
+        # Count LLM spans per model
+        model_span_counts = {}
+        for span in spans:
+            if span["attributes"].get("mlflow.spanType") == json.dumps("LLM"):
+                m = span["attributes"].get("mlflow.llm.model")
+                if m:
+                    try:
+                        m = json.loads(m)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                    model_span_counts[m] = model_span_counts.get(m, 0) + 1
+
+        # Build per-model cost-per-span
+        # Normalize model names: per_model_usage keys may use "@"
+        # (e.g. "claude-sonnet-4-5@20250929") while span attributes
+        # use "-" (e.g. "claude-sonnet-4-5-20250929").
+        model_cost_per_span = {}
+        for m_name, m_stats in per_model_usage.items():
+            m_cost = m_stats.get("cost_usd")
+            normalized = m_name.replace("@", "-")
+            m_count = (model_span_counts.get(m_name, 0)
+                       or model_span_counts.get(normalized, 0))
+            if m_cost and m_count > 0:
+                model_cost_per_span[m_name] = m_cost / m_count
+                model_cost_per_span[normalized] = m_cost / m_count
+
+        # Set mlflow.llm.cost on each LLM span
+        for span in spans:
+            if span["attributes"].get("mlflow.spanType") == json.dumps("LLM"):
+                m = span["attributes"].get("mlflow.llm.model")
+                if m:
+                    try:
+                        m = json.loads(m)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                    per_span_cost = model_cost_per_span.get(m)
+                    if per_span_cost:
+                        span["attributes"]["mlflow.llm.cost"] = json.dumps({
+                            "total_cost": per_span_cost,
+                        })
+
     # ── Trace metadata ──────────────────────────────────────────
     trace_metadata = {}
     if cost_usd:
-        trace_metadata["mlflow.trace.cost"] = json.dumps({
-            "total_cost": cost_usd,
-        })
+        trace_cost = {"total_cost": cost_usd}
+        if per_model_usage:
+            for m_name, m_stats in per_model_usage.items():
+                if m_stats.get("cost_usd") is not None:
+                    trace_cost[m_name] = m_stats["cost_usd"]
+        trace_metadata["mlflow.trace.cost"] = json.dumps(trace_cost)
     if token_usage:
         input_tokens = (token_usage.get("input", 0)
                         + token_usage.get("cache_create", 0))
