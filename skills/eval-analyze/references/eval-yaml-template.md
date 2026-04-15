@@ -8,8 +8,15 @@ Use this template when generating eval.yaml. Fill in every field from what you o
 name: <project-name>
 description: <one line: what is being evaluated>
 skill: <skill-name>
-arguments: <arguments passed to the skill invocation, from SKILL.md $ARGUMENTS>
 runner: claude-code
+
+# Execution — how the skill processes test cases
+execution:
+  mode: case              # per-case (default): one invocation per case
+                              # batch: all cases in one invocation via batch.yaml
+  arguments: <argument template with {field} placeholders from input.yaml>
+  # Per-case examples: "{prompt}", "{strat_key} {adr_file?}"
+  # Batch example: "--input batch.yaml --headless --dry-run"
 
 # Permissions for headless execution
 permissions:

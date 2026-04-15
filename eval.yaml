@@ -8,8 +8,13 @@ description: Evaluate the main skill pipeline
 
 # Skill to test
 skill: my-skill-name
-arguments: "--headless"  # Arguments passed to the skill invocation
 runner: claude-code   # Agent runner: claude-code, opencode, etc.
+
+# Execution — how the skill processes test cases
+execution:
+  mode: case              # per-case (default) or batch
+  arguments: "{prompt}"       # resolved per case from input.yaml fields
+  # For batch skills: mode: batch, arguments: "--input batch.yaml --headless"
 
 # Permissions — tool access during headless execution
 permissions:

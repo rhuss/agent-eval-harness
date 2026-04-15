@@ -132,7 +132,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/execute.py \
 
 Pass `--agent` with the `runner` value from eval.yaml (default: `claude-code`).
 
-The `--skill-args` value is the argument string for the skill invocation (e.g., `"--input batch.yaml --headless"`). If omitted, execute.py uses the `arguments` field from eval.yaml. Override via CLI only when testing different argument combinations.
+The `--skill-args` value is the argument string for the skill invocation (e.g., `"--input batch.yaml --headless"`). If omitted, execute.py uses `execution.arguments` from eval.yaml. In `case` mode, `{field}` placeholders are resolved per case from input.yaml. Override via CLI only when testing different argument combinations.
 
 ### Monitoring Progress
 
