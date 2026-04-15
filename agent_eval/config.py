@@ -7,13 +7,25 @@ from typing import Optional
 import yaml
 
 
-def _validate_relative_path(value: str, field_name: str) -> str:
-    """Reject absolute or parent-traversing paths."""
+def _validate_relative_path(value: str, field_name: str,
+                            reject_root: bool = False) -> str:
+    """Reject absolute or parent-traversing paths.
+
+    Args:
+        reject_root: If True, also reject "." (current directory).
+            Used for output paths where "." would mean the project root
+            and cleaning it would delete the entire project.
+    """
     if not value:
         return value
     p = Path(value)
     if p.is_absolute() or ".." in p.parts:
         raise ValueError(f"{field_name} must be a relative path without '..': {value}")
+    if reject_root and str(p) == ".":
+        raise ValueError(
+            f"{field_name} cannot be '.' (project root) — use a subdirectory. "
+            f"Outputs must be in a named subdirectory so the harness can "
+            f"identify, collect, and clean them without affecting the project.")
     return value
 
 
@@ -163,7 +175,8 @@ class EvalConfig:
         for i, o in enumerate(raw.get("outputs", [])):
             config.outputs.append(OutputConfig(
                 path=_validate_relative_path(
-                    o.get("path", ""), f"outputs[{i}].path"),
+                    o.get("path", ""), f"outputs[{i}].path",
+                    reject_root=True),
                 tool=o.get("tool", ""),
                 schema=o.get("schema", ""),
                 batch_pattern=o.get("batch_pattern", ""),
