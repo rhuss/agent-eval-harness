@@ -58,10 +58,13 @@ def extract_summary(events, run_result):
                 prompt = content
             break
 
-    # Extract tool calls
+    # Extract tool calls (root-level only — skip foreground subagent messages
+    # streamed by Claude Code >= 2.1.108)
     tool_calls = []
     for e in events:
         if e.get("type") != "assistant":
+            continue
+        if e.get("parent_tool_use_id"):
             continue
         for block in e.get("message", {}).get("content", []):
             if block.get("type") != "tool_use":

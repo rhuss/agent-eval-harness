@@ -161,6 +161,10 @@ def _extract_tool_calls(stdout_text, tool_outputs):
             continue
         if obj.get("type") != "assistant":
             continue
+        # Skip foreground subagent messages (Claude Code >= 2.1.108 streams
+        # them in stdout).  We only want root-level tool calls here.
+        if obj.get("parent_tool_use_id"):
+            continue
         for block in obj.get("message", {}).get("content", []):
             if block.get("type") != "tool_use":
                 continue

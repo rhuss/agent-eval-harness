@@ -271,6 +271,9 @@ def _extract_progress(obj: dict) -> str:
     t = obj.get("type")
 
     if t == "assistant":
+        # Skip foreground subagent messages to avoid duplicate progress lines
+        if obj.get("parent_tool_use_id"):
+            return ""
         msg = obj.get("message", {})
         for block in msg.get("content", []):
             if block.get("type") == "tool_use":
