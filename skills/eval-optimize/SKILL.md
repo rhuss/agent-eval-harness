@@ -76,9 +76,9 @@ For each failure pattern, investigate why the skill produces bad output:
    python3 ${CLAUDE_SKILL_DIR}/../eval-analyze/scripts/find_skills.py --name <skill>
    ```
 
-2. **Read transcripts** (if available) — transcripts can be very large, so delegate to an Agent:
+2. **Read transcripts** (if available) — transcripts can be very large, so delegate to an Agent. Check `run_result.json` for `execution_mode`: in `case` mode, each case has its own transcript at `$AGENT_EVAL_RUNS_DIR/<id>/cases/<case>/stdout.log`; in `batch` mode, there's one at `$AGENT_EVAL_RUNS_DIR/<id>/stdout.log`. Focus on the failing cases.
    ```text
-   Agent tool, subagent_type="Explore": "Read $AGENT_EVAL_RUNS_DIR/<id>/stdout.log and report:
+   Agent tool, subagent_type="Explore": "Read the transcript at <path> and report:
    - Did the skill follow its own instructions? Which were unclear?
    - Did it take roundabout paths or try multiple approaches?
    - Did sub-skills behave unexpectedly?
@@ -103,6 +103,8 @@ Apply targeted fixes to the SKILL.md. For each edit:
 - **Don't overfit** — if only 1 of 20 cases fails, the fix should be general enough to help without breaking the other 19
 
 Show each edit before applying. If the change is risky (could affect passing cases), note it.
+
+**Execution mode context**: check `execution.mode` in eval.yaml. In `case` mode, each case runs in its own isolated workspace with all case files copied in — the skill receives case-specific arguments resolved from input.yaml. In `batch` mode, all cases are in one workspace via batch.yaml. Your edits must work for the configured mode.
 
 ## Step 5: Re-Run and Verify
 
@@ -148,7 +150,8 @@ If max iterations reached with failures remaining:
 - Suggest `/eval-review --run-id <final-id>` for human assessment of the remaining issues
 - Suggest `/eval-dataset --strategy expand` if failures suggest missing test coverage
 
-In all cases, suggest `/eval-mlflow --run-id <final-id>` to log the optimization results to MLflow for tracking.
+In all cases (include `--config <config>` if a non-default config was used):
+- Suggest `/eval-mlflow --run-id <final-id>` to log the optimization results to MLflow for tracking.
 
 ## Rules
 
