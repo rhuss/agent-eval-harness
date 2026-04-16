@@ -29,6 +29,30 @@ How data flows from dataset cases through execution, collection, and scoring.
   skills/ → symlink
 ```
 
+### Case Mode (execution.mode: case)
+
+When `execution.mode` is `case` (default), workspace.py creates a separate workspace per case:
+
+```
+/tmp/agent-eval/{run-id}/
+  case_order.yaml         # [{case_id: "case-001-name"}, ...]
+  cases/
+    case-001-name/
+      input.yaml          # Copied from dataset
+      strategy.md         # Copied from dataset (companion files)
+      answers.yaml        # Copied from dataset (if present)
+      {output_dirs}/      # Empty dirs for skill outputs
+      .claude/settings.json  # Generated (hooks + permissions)
+      subagents/           # SubagentStop hook target
+      scripts/ → symlink
+      CLAUDE.md → symlink
+      skills/ → symlink
+    case-002-name/
+      ...
+```
+
+Each case gets ALL files from the dataset case directory (not just input.yaml), plus symlinked project resources and hooks. The skill runs in the case workspace as its working directory.
+
 ## 2. Workspace → Execution
 
 **What execute.py does**:
@@ -39,11 +63,23 @@ How data flows from dataset cases through execution, collection, and scoring.
 - Parses the final `result` event for token usage and cost
 - Writes `run_result.json` with exit_code, duration_s, token_usage, cost_usd
 
-**What the skill sees**:
+**What the skill sees (batch mode)**:
 - Working directory: the workspace
 - Input: batch.yaml content (via skill prompt)
 - Output directories: created and ready
 - Hooks: if configured, AskUserQuestion gets auto-answered, external services get checked
+
+**What the skill sees (case mode)**:
+- Working directory: the case workspace (`workspace/cases/{case_id}/`)
+- Input: case-specific arguments resolved from `execution.arguments` template + all case files on disk
+- Output directories: created and ready
+- Hooks: per-case hooks with SubagentStop for transcript capture
+
+**Case mode execution**:
+- execute.py loops through `case_order.yaml`, invoking the skill once per case
+- Each case gets its own stdout.log, stderr.log, and subagent transcripts
+- Results are saved to `$AGENT_EVAL_RUNS_DIR/{id}/cases/{case_id}/stdout.log`
+- run_result.json includes `execution_mode: "case"` and `per_case` breakdown
 
 ## 3. Execution → Collection
 

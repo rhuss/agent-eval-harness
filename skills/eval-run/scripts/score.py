@@ -111,16 +111,23 @@ def load_case_record(case_dir, config, run_id=None, runs_dir=None):
                 pass
 
     # --- Logs (if traces config enables them) ---
+    # In case mode, stdout/stderr are per-case at case_dir/stdout.log.
+    # In batch mode, they're at runs_dir/run_id/stdout.log.
     if run_id:
         if config.traces.stdout:
-            stdout_path = runs_dir / run_id / "stdout.log"
+            # Try case-level first (case mode), fall back to run-level (batch)
+            stdout_path = case_dir / "stdout.log"
+            if not stdout_path.exists():
+                stdout_path = runs_dir / run_id / "stdout.log"
             if stdout_path.exists():
                 try:
                     record["stdout"] = stdout_path.read_text()
                 except OSError:
                     pass
         if config.traces.stderr:
-            stderr_path = runs_dir / run_id / "stderr.log"
+            stderr_path = case_dir / "stderr.log"
+            if not stderr_path.exists():
+                stderr_path = runs_dir / run_id / "stderr.log"
             if stderr_path.exists():
                 try:
                     record["stderr"] = stderr_path.read_text()
@@ -134,7 +141,9 @@ def load_case_record(case_dir, config, run_id=None, runs_dir=None):
     if tool_outputs:
         stdout_text = record.get("stdout", "")
         if not stdout_text and run_id:
-            stdout_path = runs_dir / run_id / "stdout.log"
+            stdout_path = case_dir / "stdout.log"
+            if not stdout_path.exists():
+                stdout_path = runs_dir / run_id / "stdout.log"
             if stdout_path.exists():
                 try:
                     stdout_text = stdout_path.read_text()
