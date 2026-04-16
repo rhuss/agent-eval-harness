@@ -181,21 +181,43 @@ def main():
                     columns[key] = [row[key] for row in table_rows]
                 mlflow.log_table(columns, artifact_file="per_case_results.json")
 
-    # ── Main orchestrator trace from stdout.log ──────────────────
-    stdout_path = run_dir / "stdout.log"
+    # ── Traces from stdout.log ─────────────────────────────────
     main_trace_id = None
-    if stdout_path.exists() and run_result:
-        trace_name = f"{config.skill} ({args.run_id})" if config.skill else ""
-        trace_dict = build_trace(stdout_path, run_result, args.run_id,
-                                 experiment_id, trace_name=trace_name,
-                                 subagent_model=run_result.get(
-                                     "subagent_model"))
-        if trace_dict:
-            main_trace_id = log_trace(trace_dict)
-            if main_trace_id:
-                num_spans = len(trace_dict["data"]["spans"])
-                duration_s = run_result.get("duration_s", 0)
-                print(f"TRACE: {main_trace_id} ({num_spans} spans, {duration_s:.0f}s)")
+    exec_mode = run_result.get("execution_mode", "batch")
+
+    if exec_mode == "case":
+        # Per-case mode: each case has its own stdout.log
+        cases_dir = run_dir / "cases"
+        if cases_dir.exists():
+            for case_dir in sorted(d for d in cases_dir.iterdir() if d.is_dir()):
+                case_stdout = case_dir / "stdout.log"
+                if not case_stdout.exists():
+                    continue
+                case_id = case_dir.name
+                case_result = run_result.get("per_case", {}).get(case_id, run_result)
+                trace_name = f"{config.skill} ({case_id})" if config.skill else case_id
+                trace_dict = build_trace(case_stdout, case_result, case_id,
+                                         experiment_id, trace_name=trace_name)
+                if trace_dict:
+                    tid = log_trace(trace_dict)
+                    if tid:
+                        if not main_trace_id:
+                            main_trace_id = tid
+                        num_spans = len(trace_dict["data"]["spans"])
+                        print(f"TRACE: {tid} ({num_spans} spans) — {case_id}")
+    else:
+        # Batch mode: one stdout.log for the entire run
+        stdout_path = run_dir / "stdout.log"
+        if stdout_path.exists() and run_result:
+            trace_name = f"{config.skill} ({args.run_id})" if config.skill else ""
+            trace_dict = build_trace(stdout_path, run_result, args.run_id,
+                                     experiment_id, trace_name=trace_name)
+            if trace_dict:
+                main_trace_id = log_trace(trace_dict)
+                if main_trace_id:
+                    num_spans = len(trace_dict["data"]["spans"])
+                    duration_s = run_result.get("duration_s", 0)
+                    print(f"TRACE: {main_trace_id} ({num_spans} spans, {duration_s:.0f}s)")
 
     # ── Link traces to run ───────────────────────────────────────
     trace_ids = []

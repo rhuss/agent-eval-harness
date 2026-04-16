@@ -109,9 +109,10 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/log_results.py \
 
 This logs:
 - **Params**: skill, runner, model, run_id
-- **Metrics**: per-judge mean and pass_rate (e.g., `has_content/pass_rate`)
+- **Metrics**: per-judge mean and pass_rate, execution metrics (duration, cost, turns), per-model cost/token breakdown
 - **Artifacts**: summary.yaml
 - **Table**: per-case results with case_id, judge, value, rationale
+- **Traces**: one per case (case mode) or one for the run (batch mode), built from stdout.log
 - **Tags**: regressions_detected (yes/no)
 
 ## Step 5: Push Feedback (if `--action push-feedback` or `all`)
@@ -153,7 +154,7 @@ Print summary:
 - **Pulled**: N annotations from MLflow UI (if pull ran)
 - **MLflow UI**: `$MLFLOW_TRACKING_URI`
 
-Suggest next steps:
+Suggest next steps (include `--config <config>` if a non-default config was used):
 - `/eval-review --run-id <id>` for human review
 - `/eval-optimize --model <model>` for automated improvement
 - View results in MLflow UI at the tracking URI
