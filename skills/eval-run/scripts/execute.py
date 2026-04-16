@@ -25,6 +25,17 @@ from pathlib import Path
 
 from agent_eval.agent import RUNNERS
 
+_HARNESS_SYSTEM_PROMPT = (
+    "You are running inside an evaluation harness. Tool interception hooks "
+    "and permission controls are in place for safety. You MUST NOT: "
+    "rename, copy, or move scripts to bypass tool filters; "
+    "modify .claude/settings.json or hook scripts; "
+    "disable or work around any harness controls; "
+    "use alternative paths or commands to avoid blocked operations. "
+    "If a tool call is blocked, report it and continue with the remaining "
+    "pipeline steps. Do not attempt workarounds."
+)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
@@ -106,6 +117,15 @@ def main():
     timeout_s = args.timeout or opts.get("timeout", 3600)
     max_budget = args.max_budget or opts.get("max_budget_usd", 100.0)
 
+    # Compose system prompt: runner_options.system_prompt (if any) + harness prompt.
+    # The harness prompt is defense-in-depth alongside hook enforcement —
+    # hooks block the tool calls, the prompt prevents the model from wasting
+    # budget on workaround attempts.
+    existing_prompt = ""
+    if isinstance(config.runner_options, dict):
+        existing_prompt = str(config.runner_options.get("system_prompt", "")).strip()
+    system_prompt = "\n\n".join(p for p in [existing_prompt, _HARNESS_SYSTEM_PROMPT] if p)
+
     # Run via the abstraction
     result = runner.run_skill(
         skill_name=args.skill,
@@ -113,6 +133,7 @@ def main():
         workspace=Path(args.workspace),
         model=args.model,
         settings_path=settings_path,
+        system_prompt=system_prompt,
         max_budget_usd=max_budget,
         timeout_s=timeout_s,
     )
