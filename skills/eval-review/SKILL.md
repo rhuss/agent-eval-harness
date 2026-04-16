@@ -27,12 +27,14 @@ Also read eval.yaml to understand the skill being tested, the dataset schema, an
 
 ## Step 2: Present Overview
 
-Show the user a high-level summary:
+If an HTML report exists at `$AGENT_EVAL_RUNS_DIR/<id>/report.html`, tell the user — they can open it in a browser for a visual overview with per-case details, diffs, and judge scores.
+
+Then show a high-level summary:
 - Overall pass rates per judge
 - How many cases passed all judges vs had failures
 - If a pairwise comparison was run, show the win/loss/tie counts
 
-Then ask: "Want to review all cases, only failures, or specific cases?"
+Ask: "Want to review all cases, only failures, or specific cases?"
 
 ## Step 3: Walk Through Cases
 
