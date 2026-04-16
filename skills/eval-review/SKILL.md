@@ -48,9 +48,11 @@ If the user says "looks fine" or gives no feedback, move on. Empty feedback mean
 
 ## Step 4: Check Transcripts (if available)
 
-If execution transcripts exist (`$AGENT_EVAL_RUNS_DIR/<id>/stdout.log`), delegate analysis to an Agent — transcripts can be very large and should not be loaded into your context directly.
+If execution transcripts exist, delegate analysis to an Agent — transcripts can be very large and should not be loaded into your context directly.
 
-Spawn an Agent to read `$AGENT_EVAL_RUNS_DIR/<id>/stdout.log` and report:
+Check `run_result.json` for `execution_mode`. In `case` mode, each case has its own transcript at `$AGENT_EVAL_RUNS_DIR/<id>/cases/<case>/stdout.log`. In `batch` mode, there's one at `$AGENT_EVAL_RUNS_DIR/<id>/stdout.log`. Analyze the transcript(s) for the cases the user reviewed.
+
+Spawn an Agent to read the relevant stdout.log and report:
 - Did the skill try multiple approaches before succeeding? (instructions may be unclear)
 - Did it use unnecessary tools or take roundabout paths? (skill could be more directive)
 - Did it encounter errors and recover? (error handling might need improvement)
@@ -61,14 +63,22 @@ Report relevant transcript findings to the user alongside their case feedback �
 
 ## Step 5: Save Feedback
 
-Persist the collected feedback so it survives beyond this conversation and can be used by `/eval-optimize`:
+Persist the collected feedback so it survives beyond this conversation and can be used by `/eval-optimize` and `/eval-mlflow`.
 
-```bash
-python3 -m agent_eval.state write-ids $AGENT_EVAL_RUNS_DIR/<id>/review.yaml \
-  reviewed_cases=<count> feedback_cases=<count_with_feedback>
+Write `$AGENT_EVAL_RUNS_DIR/<id>/review.yaml` with this structure:
+
+```yaml
+run_id: "<id>"
+reviewed_cases: <count>
+feedback_cases: <count_with_feedback>
+reviewer: "human"
+feedback:
+  case-001-name: "User's comment about this case"
+  case-002-name: "Another comment"
+  case-003-name: ""  # empty = acceptable
 ```
 
-Also write the per-case feedback to `$AGENT_EVAL_RUNS_DIR/<id>/review.yaml` as a `feedback` section with case IDs and the user's comments. This file is read by `/eval-optimize` to ground its changes in human judgment.
+Use the Write tool to create the file directly — do NOT use `agent_eval.state` commands (they produce a different format). This file is read by `/eval-optimize` to ground changes in human judgment, and by `/eval-mlflow` to push feedback to MLflow traces.
 
 ## Step 6: Analyze Patterns
 
@@ -84,7 +94,7 @@ Present your analysis: "Here's what I noticed across your feedback..."
 
 Based on the feedback patterns:
 
-1. Read the skill's SKILL.md (from eval.yaml's `skill` field, locate via `python3 skills/eval-analyze/scripts/find_skills.py --name <skill>`)
+1. Read the skill's SKILL.md (from eval.yaml's `skill` field, locate via `python3 ${CLAUDE_SKILL_DIR}/../eval-analyze/scripts/find_skills.py --name <skill>`)
 2. Identify which parts of the skill's instructions relate to the user's complaints
 3. Propose specific edits — show a before/after diff for each change
 4. Explain why each change should help, grounded in the feedback evidence
@@ -95,10 +105,11 @@ If feedback suggests new judges, propose additions to eval.yaml as well.
 
 ## Step 8: Next Steps
 
-After applying approved changes, suggest:
+After applying approved changes, suggest (include `--config <config>` if a non-default config was used):
 - `/eval-run --model <model> --baseline <run-id>` to re-run and compare
 - `/eval-optimize --model <model>` if they want automated iteration from here
 - `/eval-dataset --strategy expand` if the feedback revealed coverage gaps
+- `/eval-mlflow --run-id <run-id> --action push-feedback` to push review feedback to MLflow traces
 
 ## Rules
 
