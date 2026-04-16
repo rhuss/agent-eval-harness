@@ -146,7 +146,9 @@ def _collect_per_case(workspace, output_dir, config):
         case_id = case_dir.name
 
         for output_cfg in config.outputs:
-            out_path = _safe_path_component(output_cfg.path or ".", "output path")
+            if not output_cfg.path:
+                continue  # Skip tool-only outputs (no filesystem path)
+            out_path = _safe_path_component(output_cfg.path, "output path")
             src = case_dir / out_path
 
             if not src.exists():
@@ -166,6 +168,9 @@ def _collect_per_case(workspace, output_dir, config):
             case_output.mkdir(parents=True, exist_ok=True)
 
             for f in files:
+                # Reject symlinks (CWE-59)
+                if f.is_symlink():
+                    continue
                 rel = f.relative_to(src_base)
                 dest = case_output / rel
                 dest.parent.mkdir(parents=True, exist_ok=True)

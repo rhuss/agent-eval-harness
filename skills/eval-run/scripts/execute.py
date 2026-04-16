@@ -145,17 +145,32 @@ def _resolve_arguments(template, case_data):
     """Resolve {field} and {field?} placeholders from case input data."""
     import re
 
+    missing = []
+
     def _replace(m):
         field = m.group(1)
         optional = field.endswith("?")
         if optional:
             field = field[:-1]
-        value = case_data.get(field, "")
-        if not value and optional:
+        if field not in case_data:
+            if optional:
+                return ""
+            missing.append(field)
+            return ""
+        value = case_data[field]
+        if value is None or (isinstance(value, str) and not value.strip()):
+            if optional:
+                return ""
+            missing.append(field)
             return ""
         return str(value).strip()
 
-    return re.sub(r'\{(\w+\??)\}', _replace, template).strip()
+    result = re.sub(r'\{(\w+\??)\}', _replace, template).strip()
+    if missing:
+        raise ValueError(
+            f"Missing required fields in input.yaml: {', '.join(missing)}. "
+            f"Template: {template}")
+    return result
 
 
 def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
@@ -240,9 +255,16 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
         case_results[case_id] = {
             "exit_code": result.exit_code,
             "duration_s": round(result.duration_s, 1),
+            "token_usage": result.token_usage,
             "cost_usd": result.cost_usd,
             "num_turns": result.num_turns,
         }
+
+        # Write per-case run_result.json so score.py can read
+        # execution metadata per case (not just aggregate)
+        with open(case_output / "run_result.json", "w") as f:
+            json.dump(case_results[case_id], f, indent=2)
+            f.write("\n")
         worst_exit = max(worst_exit, result.exit_code)
 
         status = "OK" if result.exit_code == 0 else f"FAIL (exit {result.exit_code})"
