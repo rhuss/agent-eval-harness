@@ -22,6 +22,11 @@ inputs:
     <natural language description of what the skill expects as input —
      how cases are structured, what files or fields they contain>
   invocation: "<how the skill is invoked: /skill-name args>"
+  companion_files:
+    - "<files the skill reads from disk at runtime, beyond the prompt —
+       e.g., strategy.md, adr.md, config files. These must be in the
+       test case directory so the harness can provision them into the
+       workspace. List actual filenames you observed in the SKILL.md.>"
 
 outputs:
   # File artifacts written to disk

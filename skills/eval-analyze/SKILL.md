@@ -89,12 +89,13 @@ First check if eval.yaml already has a `dataset.path` (from a previous run or `-
 ls <dataset_path>/ 2>/dev/null | head -20
 ```
 
-If not set or doesn't exist, search the project for test case directories:
+If not set or doesn't exist, search the project for test case directories using the Glob tool:
 
-```bash
-find . -type d \( -name "cases" -o -name "test-cases" -o -name "fixtures" -o -name "examples" \) \
-  -not -path "./.venv/*" -not -path "./.git/*" -not -path "./node_modules/*" 2>/dev/null
 ```
+Glob: **/cases/ or **/test-cases/ or **/fixtures/ or **/examples/
+```
+
+Exclude `.venv/`, `.git/`, `node_modules/` from results.
 
 If nothing found, ask the user where their test cases are (or will be).
 

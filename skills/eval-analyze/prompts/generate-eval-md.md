@@ -22,6 +22,7 @@ analyzed_at: <ISO 8601 timestamp>
 skill_hash: <SHA256 hash prefix of SKILL.md, 12 chars>
 
 # Discovered skill capabilities
+execution_mode: <case/batch>
 headless: <true/false>
 dry_run: <true/false>
 

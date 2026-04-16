@@ -88,6 +88,14 @@ def validate_config(path="eval.yaml"):
             except ImportError:
                 errors.append(f"judges.{name}.module '{module}' not importable")
 
+    # --- Execution config ---
+    execution = config.get("execution", {})
+    exec_mode = execution.get("mode", "case")
+    if exec_mode not in ("case", "batch"):
+        errors.append(f"execution.mode must be 'case' or 'batch', got '{exec_mode}'")
+    if not execution.get("arguments"):
+        warnings.append("No execution.arguments — skill will be invoked with no arguments")
+
     # --- Inputs (tool interception) ---
     for t in (config.get("inputs", {}).get("tools") or []):
         if not t.get("match"):
@@ -114,6 +122,7 @@ def validate_config(path="eval.yaml"):
         status = "INCOMPLETE"
 
     print(f"{status}: {config.get('name')} (skill={config.get('skill')})")
+    print(f"  execution: mode={exec_mode}, arguments={'yes' if execution.get('arguments') else 'no'}")
     print(f"  dataset: {dataset.get('path', 'not set')}")
     print(f"  schema: {'yes' if dataset.get('schema') else 'no'}")
     print(f"  outputs: {len(outputs)} directories")
