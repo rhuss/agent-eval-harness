@@ -123,13 +123,18 @@ def main():
     if result.stderr:
         (output_dir / "stderr.log").write_text(result.stderr)
 
-    # Save background agent output files (captured in-flight by the runner
-    # before session cleanup destroys them).
-    if result.subagent_outputs:
-        subagent_dir = output_dir / "subagents"
-        subagent_dir.mkdir(exist_ok=True)
-        for agent_id, content in result.subagent_outputs.items():
-            (subagent_dir / f"{agent_id}.jsonl").write_text(content)
+    # Copy subagent transcripts captured by the SubagentStop hook.
+    # The hook copies .jsonl files to workspace/subagents/ while the
+    # session is still alive. We move them to the run output directory.
+    # Only copy regular .jsonl files — reject symlinks (CWE-59).
+    ws_subagents = Path(args.workspace) / "subagents"
+    if ws_subagents.exists() and ws_subagents.is_dir():
+        import shutil
+        out_subagents = output_dir / "subagents"
+        out_subagents.mkdir(exist_ok=True)
+        for f in ws_subagents.iterdir():
+            if f.is_file() and not f.is_symlink() and f.suffix == ".jsonl":
+                shutil.copy2(f, out_subagents / f.name)
 
     full_model = result.resolved_model or args.model
     # Subagent models: from stream events (actual), or CLI flag, or same as main
@@ -142,14 +147,22 @@ def main():
         "duration_s": round(result.duration_s, 1),
         "token_usage": result.token_usage,
         "cost_usd": result.cost_usd,
+        "per_model_usage": result.per_model_usage,
         "num_turns": result.num_turns,
         "model": full_model,
         "subagent_model": subagent_model_str,
         "agent": runner.name,
         "agent_version": getattr(runner, "version", ""),
     }
-    with open(output_dir / "run_result.json", "w") as f:
+    run_result_path = output_dir / "run_result.json"
+    with open(run_result_path, "w") as f:
         json.dump(run_meta, f, indent=2)
+        f.write("\n")
+
+    # Verify the file is valid JSON — catch write failures early rather than
+    # letting report.py fail later with an opaque JSONDecodeError.
+    with open(run_result_path) as f:
+        json.load(f)
 
     print(f"EXIT: {result.exit_code}")
     print(f"DURATION: {result.duration_s:.0f}s")

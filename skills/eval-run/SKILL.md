@@ -155,20 +155,29 @@ Look for phase markers (`## Phase`, `## Step`, `Batch N/M`), agent counts (`N ag
 
 When you spot an issue, report it to the user with the relevant output lines rather than waiting for completion.
 
-After execution, check the result:
+After execution, check the result.
+
+**IMPORTANT**: `run_result.json` is a JSON file written by `execute.py` — do NOT
+use `agent_eval.state init` or `agent_eval.state set` on it (those write YAML,
+which silently corrupts the JSON and causes `report.py` to fail). Use `cat` or
+`python3 -c` to read it:
 
 ```bash
-python3 -m agent_eval.state read $AGENT_EVAL_RUNS_DIR/<id>/run_result.json
+cat $AGENT_EVAL_RUNS_DIR/<id>/run_result.json
 ```
 
-**run_result.json** contains:
+**run_result.json** contains (all fields written by `execute.py` automatically):
 ```json
 {
   "exit_code": 0,
   "duration_s": 45.2,
-  "token_usage": {"input": 5000, "output": 2000},
+  "token_usage": {"input": 5000, "output": 2000, "cache_read": 0, "cache_create": 0},
   "cost_usd": 0.15,
-  "agent": "claude-code"
+  "num_turns": 12,
+  "model": "claude-opus-4-6",
+  "subagent_model": "claude-opus-4-6",
+  "agent": "claude-code",
+  "agent_version": "2.1.107"
 }
 ```
 
@@ -185,10 +194,10 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/collect.py \
   --output $AGENT_EVAL_RUNS_DIR/<id>
 ```
 
-Read the collection summary:
+Read the collection summary (JSON file — do not use `agent_eval.state` on it):
 
 ```bash
-python3 -m agent_eval.state read $AGENT_EVAL_RUNS_DIR/<id>/collection.json
+cat $AGENT_EVAL_RUNS_DIR/<id>/collection.json
 ```
 
 Report per-case counts. If any case has 0 artifacts, warn — the skill may not have produced output for that case.

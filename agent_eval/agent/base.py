@@ -23,8 +23,8 @@ class RunResult:
     num_turns: Optional[int] = None
     resolved_model: Optional[str] = None  # Full model ID from runtime
     models_used: Optional[list] = None   # All distinct models observed
+    per_model_usage: Optional[dict] = None  # Per-model token/cost breakdown
     raw_output: Optional[dict] = None  # Runner-specific parsed output
-    subagent_outputs: Optional[dict] = None  # agentId -> file content (for bg agents)
 
 
 class EvalRunner(ABC):

@@ -15,10 +15,14 @@ agent_eval/              # Python package (config, runner, state)
   agent/
     base.py              # EvalRunner ABC + RunResult
     claude_code.py       # Claude Code CLI runner (claude --print)
+    stream_capture.py    # Stream-json processing (events, timestamps, usage, hooks)
   mlflow/
     experiment.py        # MLflow experiment setup, server check, feedback logging
     datasets.py          # Dataset create/sync utilities
     traces.py            # Trace search and input extraction
+    trace_builder.py     # Hierarchical trace builder (stream-json → MLflow trace)
+  cli/
+    trace_run.py         # claude-trace CLI (standalone skill tracing)
 
 skills/eval-setup/       # Skill: environment setup
   SKILL.md               # Dependencies, MLflow, API keys, directories

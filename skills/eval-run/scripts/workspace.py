@@ -112,7 +112,9 @@ def main():
     # into the project's .claude/ directory instead
     project_root = Path.cwd()
     default_symlinks = ["scripts", ".claude", "CLAUDE.md", ".context", "skills"]
-    skip_symlinks = {".claude"} if config.inputs.tools else set()
+    # Always skip .claude symlink — we create our own settings.json
+    # (for SubagentStop hook at minimum, plus tool interception if configured)
+    skip_symlinks = {".claude"}
     symlink_names = (
         [s.strip() for s in args.symlinks.split(",") if s.strip()]
         if args.symlinks else default_symlinks
@@ -144,6 +146,10 @@ def main():
     # Generate tool interception hooks if inputs.tools configured
     if config.inputs.tools:
         _setup_tool_hooks(workspace, config)
+    else:
+        # Even without tool interception, set up SubagentStop hook
+        # to capture background agent transcripts for tracing.
+        _setup_subagent_only_hook(workspace)
 
     print(f"WORKSPACE: {workspace}")
     print(f"CASES: {len(case_dirs)}")
@@ -220,6 +226,69 @@ def _expand_symlink_permissions(allow_list):
     return allow_list + extras
 
 
+def _carry_over_permissions(settings):
+    """Copy project permissions (allow, deny, additionalDirectories) into settings."""
+    import json as _json
+
+    project_settings = Path.cwd() / ".claude" / "settings.json"
+    if not project_settings.exists():
+        return
+    try:
+        with open(project_settings) as f:
+            proj = _json.load(f)
+    except (_json.JSONDecodeError, OSError):
+        return
+
+    proj_perms = proj.get("permissions", {})
+    if proj_perms.get("allow"):
+        allow_list = _expand_symlink_permissions(list(proj_perms["allow"]))
+        settings.setdefault("permissions", {})["allow"] = allow_list
+    if proj_perms.get("deny"):
+        settings.setdefault("permissions", {})["deny"] = list(proj_perms["deny"])
+    if proj_perms.get("additionalDirectories"):
+        dirs = list(proj_perms["additionalDirectories"])
+        for d in list(dirs):
+            resolved = str(Path(d).resolve())
+            if resolved != d and resolved not in dirs:
+                dirs.append(resolved)
+        settings.setdefault("permissions", {}).setdefault(
+            "additionalDirectories", []).extend(dirs)
+
+
+def _setup_subagent_only_hook(workspace):
+    """Set up SubagentStop hook without tool interception.
+
+    When there are no inputs.tools, we still need the SubagentStop hook
+    to capture background agent transcripts for tracing. This creates
+    a minimal .claude/settings.json with just the hook and project
+    permissions.
+    """
+    import json as _json
+
+    settings_dir = workspace / ".claude"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+
+    settings = {}
+
+    # Carry over project permissions (allow, deny, additionalDirectories)
+    _carry_over_permissions(settings)
+
+    # Grant project root access
+    project_root = str(Path.cwd().resolve())
+    settings.setdefault("permissions", {}).setdefault(
+        "additionalDirectories", []).append(project_root)
+
+    # Add SubagentStop hook
+    from agent_eval.agent.stream_capture import setup_subagent_hook
+    subagent_dir = str((workspace / "subagents").resolve())
+    setup_subagent_hook(settings, subagent_dir)
+
+    with open(settings_dir / "settings.json", "w") as f:
+        _json.dump(settings, f, indent=2)
+
+    print("HOOKS: SubagentStop configured (subagent capture)")
+
+
 def _extract_tool_patterns(match_text):
     """Extract tool name patterns from a natural language match description.
 
@@ -292,37 +361,22 @@ def _setup_tool_hooks(workspace, config):
             }],
         })
 
-    # Carry over permissions from the project's settings.json so the skill
-    # retains its allowed tool patterns in the workspace (headless --print
-    # mode still requires explicit permission for Bash commands, etc.)
-    project_settings = Path.cwd() / ".claude" / "settings.json"
-    if project_settings.exists():
-        try:
-            with open(project_settings) as f:
-                proj = _json.load(f)
-            proj_perms = proj.get("permissions", {})
-            if proj_perms.get("allow"):
-                allow_list = list(proj_perms["allow"])
-                # Resolve symlinked paths (e.g., macOS /tmp → /private/tmp)
-                # so permission patterns match canonical paths.
-                allow_list = _expand_symlink_permissions(allow_list)
-                settings.setdefault("permissions", {})["allow"] = allow_list
-            if proj_perms.get("additionalDirectories"):
-                dirs = list(proj_perms["additionalDirectories"])
-                for d in list(dirs):
-                    resolved = str(Path(d).resolve())
-                    if resolved != d and resolved not in dirs:
-                        dirs.append(resolved)
-                settings.setdefault("permissions", {}).setdefault(
-                    "additionalDirectories", []).extend(dirs)
-        except (_json.JSONDecodeError, OSError):
-            pass
+    # Carry over permissions (allow, deny, additionalDirectories)
+    _carry_over_permissions(settings)
 
     # Grant access to the project root so symlinked resources (skills,
     # scripts, context) can be read by the sandbox.
     project_root = str(Path.cwd().resolve())
     settings.setdefault("permissions", {}).setdefault(
         "additionalDirectories", []).append(project_root)
+
+    # Add SubagentStop hook to capture background agent transcripts.
+    # The hook copies each subagent's .jsonl file to workspace/subagents/.
+    # Requires session persistence ON (the runner must NOT pass
+    # --no-session-persistence) so transcript files survive until the hook fires.
+    from agent_eval.agent.stream_capture import setup_subagent_hook
+    subagent_dir = str((workspace / "subagents").resolve())
+    setup_subagent_hook(settings, subagent_dir)
 
     with open(settings_dir / "settings.json", "w") as f:
         _json.dump(settings, f, indent=2)

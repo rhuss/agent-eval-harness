@@ -467,8 +467,12 @@ agent_eval/              # Python package (config, runner, state)
   agent/
     base.py              # EvalRunner ABC + RunResult
     claude_code.py       # Claude Code CLI runner
+    stream_capture.py    # Stream-json processing + SubagentStop hook
   mlflow/
     experiment.py        # MLflow experiment setup
+    trace_builder.py     # Hierarchical trace builder
+  cli/
+    trace_run.py         # claude-trace CLI
 
 skills/
   eval-setup/            # Environment setup
@@ -491,8 +495,20 @@ runner: opencode       # when implemented
 
 Add new runners by subclassing `EvalRunner` in `agent_eval/agent/` and registering in `RUNNERS`.
 
+## MLflow Tracing
+
+The same tracing used by `/eval-mlflow` is available for standalone skill runs via `claude-trace` — a drop-in replacement for `claude --print` that captures stream-json output and builds hierarchical MLflow traces. See **[TRACING.md](TRACING.md)** for full documentation.
+
+```bash
+# Install with MLflow support
+pip install -e "./agent-eval-harness[mlflow]"
+
+# Run any skill with tracing
+echo "/rfe.speedrun --input batch.yaml --headless" | claude-trace --model opus
+```
+
 ## Dependencies
 
-- `mlflow[genai] >= 3.5`
 - `pyyaml >= 6.0`
+- Optional: `mlflow[genai] >= 3.5` (for `/eval-mlflow` and `claude-trace`)
 - Optional: `anthropic >= 0.40` (for pairwise comparison)
