@@ -11,11 +11,26 @@ skill: <skill-name>
 runner: claude-code
 
 # Execution — how the skill processes test cases
+#
+# How to choose the mode:
+# - case (default): the skill expects ONE input and runs a pipeline on it.
+#   Signs: $ARGUMENTS is a single value (Jira key, prompt, file path),
+#   the skill runs phases sequentially on that input, then exits.
+#   Examples: /test-plan.create RHAISTRAT-1520, /rfe.create "problem..."
+#
+# - batch: the skill accepts a BATCH FILE and processes multiple items
+#   in one invocation. Signs: the skill has --input flag that takes a
+#   YAML list, it iterates over entries internally, it has batch-size
+#   or parallelism controls (--batch-size, --parallel, --concurrency).
+#   Parallelism options are a strong signal — if the skill manages
+#   concurrency itself, it's doing batch processing.
+#   Examples: /rfe.speedrun --input batch.yaml, /rfe.auto-fix --input ids.yaml
+#
+# When in doubt, use case — it's safer (each case gets full isolation).
 execution:
-  mode: case              # per-case (default): one invocation per case
-                              # batch: all cases in one invocation via batch.yaml
+  mode: case
   arguments: <argument template with {field} placeholders from input.yaml>
-  # Per-case examples: "{prompt}", "{strat_key} {adr_file?}"
+  # Case examples: "{prompt}", "{strat_key} {adr_file?}"
   # Batch example: "--input batch.yaml --headless --dry-run"
 
 # Permissions for headless execution

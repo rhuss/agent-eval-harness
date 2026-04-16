@@ -40,6 +40,22 @@ sub_skills:
     produces: "<what artifacts it writes, if any>"
   # List all sub-skills in pipeline order
 
+execution_mode:
+  mode: "<case or batch>"
+  reasoning: |
+    <why you chose this mode — what you observed in the skill>
+  # case: the skill expects a single input (one problem, one Jira key, one file)
+  #   and runs a pipeline on it. $ARGUMENTS is a single value or a few fields.
+  #   Examples: /rfe.create "problem statement", /test-plan.create RHAISTRAT-1520
+  # batch: the skill accepts a batch file (--input batch.yaml) and processes
+  #   multiple items in one invocation. It iterates over entries internally.
+  #   Strong signal: the skill has parallelism or batch-size controls
+  #   (--batch-size, --parallel, --concurrency).
+  #   Examples: /rfe.speedrun --input batch.yaml, /rfe.auto-fix --input ids.yaml
+  arguments_template: "<template with {field} placeholders from input.yaml>"
+  # For case mode: "{prompt}", "{strat_key} {adr_file?}"
+  # For batch mode: "--input batch.yaml --headless --dry-run"
+
 flags:
   supported:
     - "--flag: what it does"
