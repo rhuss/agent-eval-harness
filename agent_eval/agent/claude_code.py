@@ -27,7 +27,6 @@ class ClaudeCodeRunner(EvalRunner):
         subagent_model: Optional[str] = None,
         plugin_dirs: Optional[list] = None,
         env_strip: Optional[list] = None,
-        settings: Optional[dict] = None,
         system_prompt: Optional[str] = None,
         mlflow_experiment: Optional[str] = None,
         mlflow_tracking_uri: Optional[str] = None,
@@ -37,7 +36,6 @@ class ClaudeCodeRunner(EvalRunner):
         self._subagent_model = subagent_model
         self._plugin_dirs = plugin_dirs or []
         self._env_strip = env_strip or []
-        self._settings = settings
         self._system_prompt = system_prompt
         self._mlflow_experiment = mlflow_experiment
         self._mlflow_tracking_uri = mlflow_tracking_uri

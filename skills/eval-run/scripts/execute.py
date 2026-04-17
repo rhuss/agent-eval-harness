@@ -100,7 +100,6 @@ def main():
         permissions=config.permissions,
         plugin_dirs=config.runner.plugin_dirs,
         env_strip=config.runner.env_strip,
-        settings=config.runner.settings,
         system_prompt=config.runner.system_prompt,
         subagent_model=subagent_model,
         mlflow_experiment=mlflow_experiment,
@@ -108,9 +107,16 @@ def main():
         log_prefix="eval",
     )
 
-    # Resolve timeout and budget: CLI override > config > defaults
-    timeout_s = args.timeout or config.execution.timeout or 3600
-    max_budget = args.max_budget or config.execution.max_budget_usd or 100.0
+    # Resolve timeout and budget: CLI override > config > defaults.
+    # Use explicit None checks so that 0 is preserved (an operator who
+    # passes --timeout 0 or sets max_budget_usd: 0 in the config gets
+    # exactly that, not the default).
+    timeout_s = (args.timeout if args.timeout is not None
+                 else config.execution.timeout if config.execution.timeout is not None
+                 else 3600)
+    max_budget = (args.max_budget if args.max_budget is not None
+                  else config.execution.max_budget_usd if config.execution.max_budget_usd is not None
+                  else 100.0)
 
     # Compose system prompt: runner.system_prompt (if any) + harness prompt.
     existing_prompt = (config.runner.system_prompt or "").strip()
