@@ -88,9 +88,21 @@ mlflow:
     assert cfg.mlflow.tags == {"team": "ml"}
 
 
-def test_mlflow_experiment_defaults_to_name(tmp_path):
-    cfg = EvalConfig.from_yaml(_write(tmp_path, "name: my-eval\nskill: s\n"))
+def test_mlflow_experiment_defaults_to_name_when_block_present(tmp_path):
+    """`mlflow:` block present but no `experiment:` → fall back to eval name."""
+    cfg = EvalConfig.from_yaml(_write(tmp_path, """
+name: my-eval
+skill: s
+mlflow:
+  tracking_uri: sqlite:///x.db
+"""))
     assert cfg.mlflow.experiment == "my-eval"
+
+
+def test_mlflow_disabled_when_block_absent(tmp_path):
+    """No `mlflow:` block → experiment empty, MLflow logging off."""
+    cfg = EvalConfig.from_yaml(_write(tmp_path, "name: my-eval\nskill: s\n"))
+    assert cfg.mlflow.experiment == ""
 
 
 def test_judge_model_resolution_precedence(tmp_path, monkeypatch):

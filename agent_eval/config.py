@@ -121,7 +121,10 @@ class RunnerConfig:
 class MlflowConfig:
     """MLflow logging target.
 
-    experiment: experiment name (defaults to EvalConfig.name when blank).
+    experiment: experiment name. Defaults to EvalConfig.name when an
+        `mlflow:` block is present but `experiment` is unset. Stays empty
+        when the eval.yaml has no `mlflow:` block at all — so MLflow
+        tracing/logging is opt-in via the block, not implicit from `name:`.
     tracking_uri: MLflow server URI; if unset, falls back to
         MLFLOW_TRACKING_URI env var.
     tags: tags applied to every run logged for this eval.
@@ -261,10 +264,18 @@ class EvalConfig:
             judge=models_raw.get("judge"),
         )
 
-        # MLflow block (experiment defaults to top-level name)
-        mlflow_raw = raw.get("mlflow", {}) or {}
+        # MLflow block. Experiment defaults to the eval's top-level
+        # `name` only when an `mlflow:` block is present — so omitting
+        # the block entirely leaves MLflow off (no accidental experiment
+        # creation on shared tracking servers).
+        has_mlflow_block = "mlflow" in raw and raw["mlflow"] is not None
+        mlflow_raw = raw.get("mlflow") or {}
+        if has_mlflow_block:
+            experiment = mlflow_raw.get("experiment") or raw.get("name", "")
+        else:
+            experiment = ""
         mlflow = MlflowConfig(
-            experiment=mlflow_raw.get("experiment") or raw.get("name", ""),
+            experiment=experiment,
             tracking_uri=mlflow_raw.get("tracking_uri"),
             tags=mlflow_raw.get("tags", {}) or {},
         )
