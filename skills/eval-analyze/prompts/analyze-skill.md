@@ -29,14 +29,14 @@ inputs:
        workspace. List actual filenames you observed in the SKILL.md.>"
 
 outputs:
-  # File artifacts written to disk
+  # File artifacts written to disk — field names match eval.yaml
   - path: "<directory where the pipeline writes final outputs>"
-    description: |
+    schema: |
       <what is produced here — file types, naming patterns, content
        structure. Describe what you actually observed, not generic patterns.>
   # Tool call side effects (if the skill calls external APIs)
   # - tool: "<tool name pattern, e.g. mcp__atlassian__create_issue>"
-  #   description: |
+  #   schema: |
   #     <what this tool call does and what fields in its input/output matter>
 
 sub_skills:
@@ -45,10 +45,14 @@ sub_skills:
     produces: "<what artifacts it writes, if any>"
   # List all sub-skills in pipeline order
 
-execution_mode:
+execution:
+  # Field names match eval.yaml's execution: block — drop them in directly.
   mode: "<case or batch>"
+  arguments: "<template with {field} placeholders from input.yaml>"
   reasoning: |
-    <why you chose this mode — what you observed in the skill>
+    <why you chose this mode — what you observed in the skill.
+     This is analyzer-only context, not copied into eval.yaml.>
+  # mode guidance:
   # case: the skill expects a single input (one problem, one Jira key, one file)
   #   and runs a pipeline on it. $ARGUMENTS is a single value or a few fields.
   #   Examples: /rfe.create "problem statement", /test-plan.create RHAISTRAT-1520
@@ -57,7 +61,7 @@ execution_mode:
   #   Strong signal: the skill has parallelism or batch-size controls
   #   (--batch-size, --parallel, --concurrency).
   #   Examples: /rfe.speedrun --input batch.yaml, /rfe.auto-fix --input ids.yaml
-  arguments_template: "<template with {field} placeholders from input.yaml>"
+  # arguments examples:
   # For case mode: "{prompt}", "{strat_key} {adr_file?}"
   # For batch mode: "--input batch.yaml --headless --dry-run"
 

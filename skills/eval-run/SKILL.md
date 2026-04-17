@@ -15,9 +15,9 @@ Parse `$ARGUMENTS`:
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| config (positional) | no | `eval.yaml` | Path to eval config |
-| `--model <model>` | **yes** | — | Model to use for execution |
-| `--subagent-model <model>` | no | same as model | Model for subagents (e.g., `sonnet` while main is `opus`) |
+| `--config <path>` | no | `eval.yaml` | Path to eval config |
+| `--model <model>` | no | `models.skill` from config | Skill model. Required if `models.skill` is unset in eval.yaml. |
+| `--subagent-model <model>` | no | `models.subagent` → falls back to skill model | Model for subagents (e.g., `claude-sonnet-4-6` while main is `claude-opus-4-7`) |
 | `--skill <name>` | no | from config | Override the skill to test |
 | `--run-id <id>` | no | `YYYY-MM-DD-<model>` | Identifier for this run |
 | `--case <filter>` | no | all cases | Substring match to select cases |
@@ -37,7 +37,7 @@ test -f <config> && echo "CONFIG_EXISTS" || echo "NO_CONFIG"
 Use the Skill tool to invoke /eval-analyze [--skill <skill>]
 ```
 
-Once config exists, read it to extract `skill`, `runner`, `dataset.path`, `outputs`, `inputs.tools`, `traces`, `judges`, and `mlflow_experiment`.
+Once config exists, read it to understand the eval setup — the skill under test, runner, dataset, outputs, judges, models, and any tool interception. The downstream scripts read the same config; you don't need to pass these fields through, just confirm they're present and warn the user about anything missing or surprising.
 
 If `inputs.tools` has entries but the skill uses AskUserQuestion or external APIs, verify the handlers cover those tools. Warn the user if a tool the skill uses isn't intercepted — headless execution may hang.
 
@@ -132,9 +132,13 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/execute.py \
   [--mlflow-experiment <name>]
 ```
 
-Pass `--agent` with the `runner` value from eval.yaml (default: `claude-code`).
+Most flags fall back to the config:
+- `--agent` falls back to `runner.type` (default `claude-code`).
+- `--model` falls back to `models.skill`. If neither is set, execute.py errors out.
+- `--mlflow-experiment` falls back to `mlflow.experiment`.
+- `--skill-args` falls back to `execution.arguments`. In `case` mode, `{field}` placeholders are resolved per case from input.yaml.
 
-The `--skill-args` value is the argument string for the skill invocation (e.g., `"--input batch.yaml --headless"`). If omitted, execute.py uses `execution.arguments` from eval.yaml. In `case` mode, `{field}` placeholders are resolved per case from input.yaml. Override via CLI only when testing different argument combinations.
+Override via CLI only when testing different combinations than what the config specifies.
 
 ### Monitoring Progress
 
@@ -157,33 +161,13 @@ Look for phase markers (`## Phase`, `## Step`, `Batch N/M`), agent counts (`N ag
 
 When you spot an issue, report it to the user with the relevant output lines rather than waiting for completion.
 
-After execution, check the result.
-
-**IMPORTANT**: `run_result.json` is a JSON file written by `execute.py` — do NOT
-use `agent_eval.state init` or `agent_eval.state set` on it (those write YAML,
-which silently corrupts the JSON and causes `report.py` to fail). Use `cat` or
-`python3 -c` to read it:
+After execution, check `run_result.json` for `exit_code`, `duration_s`, `cost_usd`, `num_turns`, and per-model token usage. Read it with `cat` (it's JSON — `agent_eval.state` would corrupt it to YAML).
 
 ```bash
 cat $AGENT_EVAL_RUNS_DIR/<id>/run_result.json
 ```
 
-**run_result.json** contains (all fields written by `execute.py` automatically):
-```json
-{
-  "exit_code": 0,
-  "duration_s": 45.2,
-  "token_usage": {"input": 5000, "output": 2000, "cache_read": 0, "cache_create": 0},
-  "cost_usd": 0.15,
-  "num_turns": 12,
-  "model": "claude-opus-4-6",
-  "subagent_model": "claude-opus-4-6",
-  "agent": "claude-code",
-  "agent_version": "2.1.107"
-}
-```
-
-If `exit_code` is non-zero, report the failure clearly — show the exit code, duration, and the first few lines of `$AGENT_EVAL_RUNS_DIR/<id>/stderr.log`. Do not continue to scoring.
+If `exit_code` is non-zero, report the failure with the exit code, duration, and the first few lines of `$AGENT_EVAL_RUNS_DIR/<id>/stderr.log`. Do not continue to scoring.
 
 ## Step 5: Collect Artifacts
 
@@ -237,27 +221,7 @@ Read the full results:
 python3 -m agent_eval.state read $AGENT_EVAL_RUNS_DIR/<id>/summary.yaml
 ```
 
-**summary.yaml** contains:
-```yaml
-run_id: "2026-04-04-opus"
-judges:
-  has_content:
-    mean: 1.0
-    pass_rate: 1.0
-  output_quality:
-    mean: 4.2
-    pass_rate: null
-per_case:
-  case-001-name:
-    has_content: {value: true, rationale: "Output has 523 chars"}
-    output_quality: {value: 4, rationale: "Good coverage..."}
-pairwise:  # only if --baseline was used
-  run_a: "2026-04-04-opus"
-  run_b: "2026-04-01-sonnet"
-  wins_a: 3
-  wins_b: 1
-  ties: 1
-```
+`summary.yaml` has three sections: `judges` (per-judge `mean` and `pass_rate`), `per_case` (per-case `{value, rationale}` per judge), and `pairwise` (only if `--baseline` was used: `run_a`, `run_b`, `wins_a`, `wins_b`, `ties`).
 
 ## Step 7: Interpret and Report
 
@@ -308,7 +272,7 @@ Suggest next steps (include `--config <config>` if a non-default config was used
 
 ## Step 8: Log to MLflow (optional)
 
-If `mlflow_experiment` is configured in eval.yaml:
+If `mlflow.experiment` is configured in eval.yaml:
 
 ```text
 Use the Skill tool to invoke /eval-mlflow --action log-results --run-id <id> --config <config>

@@ -7,7 +7,7 @@ allowed-tools: Read, Bash, Glob, AskUserQuestion
 
 You are an environment configurator. You ensure the evaluation harness is ready to run — dependencies installed, API keys set, MLflow configured, directories created. Non-destructive: skip steps that are already done, report status.
 
-After setup, the pipeline is: `/eval-analyze` → `/eval-dataset` → `/eval-run` → `/eval-review` or `/eval-optimize` → `/eval-mlflow`.
+After setup, the pipeline is: `/eval-analyze` → `/eval-dataset` → `/eval-run` → `/eval-review` or `/eval-optimize`. `/eval-mlflow` can be invoked at any point after `/eval-run` to log results, sync datasets, or push/pull feedback — `/eval-run` already auto-logs results when `mlflow.experiment` is set in eval.yaml.
 
 ## Step 0: Parse Arguments
 
@@ -84,6 +84,8 @@ echo "MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-not set}"
 3. **Remote server** (Databricks, etc.):
    Ask the user for their tracking URI and verify connectivity.
 
+**Per-project pinning**: To pin a tracking URI to a specific eval suite (overriding the env var), set `mlflow.tracking_uri` in eval.yaml. Useful when one machine runs evals against multiple servers. The harness resolves URIs in this order: `mlflow.tracking_uri` in eval.yaml > `MLFLOW_TRACKING_URI` env var > `http://127.0.0.1:5000`.
+
 ## Step 4: Configure API Keys
 
 Check authentication:
@@ -124,7 +126,7 @@ Tracing is configured automatically — `/eval-run` injects the MLflow Stop hook
 
 If `--skip-mlflow` was passed, skip this step.
 
-Check if eval.yaml exists and has `mlflow_experiment` configured:
+Check if eval.yaml exists and has `mlflow.experiment` configured:
 
 ```bash
 test -f eval.yaml && echo "CONFIG_EXISTS" || echo "NO_CONFIG"
@@ -135,13 +137,13 @@ If eval.yaml exists:
 ```bash
 python3 -c "
 from agent_eval.config import EvalConfig
-from agent_eval.mlflow.experiment import setup_experiment
+from agent_eval.mlflow.experiment import setup_experiment, resolve_tracking_uri
 config = EvalConfig.from_yaml('eval.yaml')
-if config.mlflow_experiment:
-    setup_experiment(config.mlflow_experiment)
-    print(f'Experiment created: {config.mlflow_experiment}')
+if config.mlflow.experiment:
+    setup_experiment(config.mlflow.experiment, tracking_uri=resolve_tracking_uri(config))
+    print(f'Experiment created: {config.mlflow.experiment} on {resolve_tracking_uri(config)}')
 else:
-    print('No mlflow_experiment in eval.yaml, skipping')
+    print('No mlflow.experiment in eval.yaml, skipping')
 "
 ```
 

@@ -8,9 +8,8 @@ Use this template when generating eval.yaml. Fill in every field from what you o
 name: <project-name>
 description: <one line: what is being evaluated>
 skill: <skill-name>
-runner: claude-code
 
-# Execution — how the skill processes test cases
+# Execution — how the skill processes test cases (runner-agnostic)
 #
 # How to choose the mode:
 # - case (default): the skill expects ONE input and runs a pipeline on it.
@@ -32,19 +31,33 @@ execution:
   arguments: <argument template with {field} placeholders from input.yaml>
   # Case examples: "{prompt}", "{strat_key} {adr_file?}"
   # Batch example: "--input batch.yaml --headless --dry-run"
+  # timeout: 3600           # Per-invocation wall-clock timeout (seconds)
+  # max_budget_usd: 5.0     # Per-invocation cost cap
+
+# Runner — agent harness + runner-specific knobs
+runner:
+  type: claude-code         # Discriminator: claude-code, opencode, etc.
+  # settings: {}            # Runner-specific settings overrides
+  # plugin_dirs: []         # Plugin dirs the evaluated skill needs
+  # env_strip: [JIRA_TOKEN] # Env vars to remove before launching the runner
+  # system_prompt: ""       # Appended to harness system prompt
+
+# Models — defaults for each role (CLI flags override)
+models:
+  skill: <model-id>         # Required (or pass --model)
+  # subagent: <model-id>    # Defaults to skill model
+  judge: <model-id>         # Used by LLM and pairwise judges
 
 # Permissions for headless execution
 permissions:
   allow: []     # Tool patterns to allow (empty = all)
   deny: []      # Tool patterns to block (e.g., "mcp__*")
 
-# Runner-specific options (ignored by other runners)
-runner_options:
-  # settings: eval/config/settings.json
-  # env_strip: [JIRA_TOKEN]
-
-# MLflow experiment (optional)
-mlflow_experiment: <project>-eval
+# MLflow logging target (optional)
+mlflow:
+  experiment: <project>-eval
+  # tracking_uri: sqlite:///mlflow.db   # Override env var for self-contained runs
+  # tags: { team: ml }
 
 # Dataset — describe what you actually observed in the sample case
 dataset:
@@ -128,7 +141,7 @@ judges:
   # - name: pairwise
   #   description: Compare two runs and pick the better output
   #   prompt_file: eval/prompts/comparison-judge.md
-  #   model: claude-sonnet-4-6
+  #   # model: <model-id>   # Optional override; default is models.judge
 
 # Thresholds for regression detection
 thresholds:
