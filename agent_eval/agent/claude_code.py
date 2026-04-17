@@ -24,23 +24,24 @@ class ClaudeCodeRunner(EvalRunner):
     def __init__(
         self,
         permissions: Optional[dict] = None,
-        runner_options: Optional[dict] = None,
         subagent_model: Optional[str] = None,
         plugin_dirs: Optional[list] = None,
-        mlflow_experiment: Optional[str] = None,
         env_strip: Optional[list] = None,
+        settings: Optional[dict] = None,
+        system_prompt: Optional[str] = None,
+        mlflow_experiment: Optional[str] = None,
+        mlflow_tracking_uri: Optional[str] = None,
         log_prefix: Optional[str] = None,
     ):
-        opts = runner_options or {}
         self._permissions = permissions or {}
         self._subagent_model = subagent_model
-        self._plugin_dirs = plugin_dirs or opts.get("plugin_dirs", [])
+        self._plugin_dirs = plugin_dirs or []
+        self._env_strip = env_strip or []
+        self._settings = settings
+        self._system_prompt = system_prompt
         self._mlflow_experiment = mlflow_experiment
-        self._env_strip = env_strip or opts.get("env_strip", [])
+        self._mlflow_tracking_uri = mlflow_tracking_uri
         self._log_prefix = log_prefix
-        self._settings = opts.get("settings")
-        self._max_budget = opts.get("max_budget_usd")
-        self._system_prompt = opts.get("system_prompt")
 
     @property
     def name(self) -> str:
@@ -263,6 +264,8 @@ class ClaudeCodeRunner(EvalRunner):
             env["CLAUDE_CODE_SUBAGENT_MODEL"] = self._subagent_model
         if self._mlflow_experiment:
             env["MLFLOW_EXPERIMENT_NAME"] = self._mlflow_experiment
+        if self._mlflow_tracking_uri:
+            env["MLFLOW_TRACKING_URI"] = self._mlflow_tracking_uri
         return env
 
 

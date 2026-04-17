@@ -208,7 +208,7 @@ def load_judges(config, project_root=None):
         if jc.check:
             scorer = _make_inline_check(jc)
         elif jc.prompt or jc.prompt_file:
-            scorer = _load_llm_judge(jc, project_root)
+            scorer = _load_llm_judge(jc, config, project_root)
         elif jc.module and jc.function:
             scorer = _load_code_judge(jc, project_root)
         else:
@@ -310,7 +310,18 @@ def _load_code_judge(jc, project_root=None):
     return getattr(mod, jc.function)
 
 
-def _load_llm_judge(jc, project_root=None):
+def _resolve_judge_model(jc, config):
+    """Resolve LLM judge model: per-judge > models.judge > env > error."""
+    model = jc.model or config.models.judge or os.environ.get("EVAL_JUDGE_MODEL")
+    if not model:
+        raise RuntimeError(
+            f"No model configured for LLM judge '{jc.name}'. Set per-judge "
+            "'model:', top-level 'models.judge:' in eval.yaml, or "
+            "EVAL_JUDGE_MODEL env var.")
+    return model
+
+
+def _load_llm_judge(jc, config, project_root=None):
     root = Path(project_root).resolve() if project_root else Path.cwd().resolve()
     prompt = jc.prompt
     if not prompt and jc.prompt_file:
@@ -335,7 +346,8 @@ def _load_llm_judge(jc, project_root=None):
     # Use direct Anthropic client when Vertex AI is configured (MLflow's
     # make_judge uses litellm which requires OpenAI API key by default)
     if os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID") or os.environ.get("ANTHROPIC_API_KEY"):
-        return _make_anthropic_llm_judge(jc.name, prompt)
+        judge_model = _resolve_judge_model(jc, config)
+        return _make_anthropic_llm_judge(jc.name, prompt, judge_model)
 
     # MLflow make_judge (requires OpenAI-compatible API key)
     try:
@@ -351,7 +363,7 @@ def _load_llm_judge(jc, project_root=None):
                        "ANTHROPIC_API_KEY, or OPENAI_API_KEY")
 
 
-def _make_anthropic_llm_judge(name, prompt):
+def _make_anthropic_llm_judge(name, prompt, judge_model):
     """Create an LLM judge using the Anthropic client directly.
 
     Falls back to this when MLflow make_judge fails (e.g., no OpenAI key).
@@ -371,8 +383,6 @@ def _make_anthropic_llm_judge(name, prompt):
                 output_text += f"\n### {path}\n\n{content}\n"
             rendered_prompt = rendered_prompt.replace("{{ outputs }}", output_text)
 
-        # Use the best available model; fall back through options
-        judge_model = os.environ.get("EVAL_JUDGE_MODEL", "claude-sonnet-4-6")
         response = client.messages.create(
             model=judge_model,
             max_tokens=1024,
@@ -449,7 +459,7 @@ class PairwiseResult:
 
 
 def compare_runs(run_a_dir, run_b_dir, config, case_ids,
-                 prompt=None, prompt_file=None, model="claude-sonnet-4-6"):
+                 prompt=None, prompt_file=None, model=None):
     """Compare two runs using position-swapped LLM judge."""
     comparison_prompt = prompt
     if not comparison_prompt and prompt_file:
@@ -731,7 +741,15 @@ def cmd_pairwise(args):
         pairwise_jc = next((j for j in config.judges
                             if j.prompt or j.prompt_file), None)
 
-    model = args.model or (pairwise_jc.model if pairwise_jc else "") or "claude-sonnet-4-6"
+    model = (args.model
+             or (pairwise_jc.model if pairwise_jc else "")
+             or config.models.judge
+             or os.environ.get("EVAL_JUDGE_MODEL"))
+    if not model:
+        print("ERROR: no pairwise judge model configured. Set --model, "
+              "pairwise judge 'model:', 'models.judge:' in eval.yaml, or "
+              "EVAL_JUDGE_MODEL env var.", file=sys.stderr)
+        sys.exit(1)
     prompt_file = args.prompt_file or (pairwise_jc.prompt_file if pairwise_jc else "")
 
     print(f"Pairwise comparison: {args.run_id} vs {args.baseline} "

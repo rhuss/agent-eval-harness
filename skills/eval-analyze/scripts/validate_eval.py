@@ -106,9 +106,17 @@ def validate_config(path="eval.yaml"):
         if prompt_file and not Path(prompt_file).exists():
             errors.append(f"inputs.tools prompt_file '{prompt_file}' not found")
 
-    settings = config.get("runner_options", {}).get("settings", "")
-    if settings and not Path(settings).exists():
-        errors.append(f"runner_options.settings '{settings}' not found")
+    runner = config.get("runner") or {}
+    settings = runner.get("settings")
+    if isinstance(settings, str) and settings and not Path(settings).exists():
+        errors.append(f"runner.settings '{settings}' not found")
+
+    # --- Models ---
+    models = config.get("models") or {}
+    if not models.get("skill"):
+        warnings.append("No models.skill — eval-run will require --model on every invocation")
+    if not models.get("judge"):
+        warnings.append("No models.judge — LLM/pairwise judges will need EVAL_JUDGE_MODEL or per-judge 'model:'")
 
     # --- Report ---
     if errors:
@@ -121,8 +129,12 @@ def validate_config(path="eval.yaml"):
     elif warnings:
         status = "INCOMPLETE"
 
+    mlflow = config.get("mlflow") or {}
     print(f"{status}: {config.get('name')} (skill={config.get('skill')})")
     print(f"  execution: mode={exec_mode}, arguments={'yes' if execution.get('arguments') else 'no'}")
+    print(f"  runner: {runner.get('type', 'claude-code')}")
+    print(f"  models: skill={models.get('skill', 'unset')}, judge={models.get('judge', 'unset')}")
+    print(f"  mlflow: experiment={mlflow.get('experiment') or config.get('name', 'unset')}")
     print(f"  dataset: {dataset.get('path', 'not set')}")
     print(f"  schema: {'yes' if dataset.get('schema') else 'no'}")
     print(f"  outputs: {len(outputs)} directories")

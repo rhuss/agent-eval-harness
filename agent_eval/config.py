@@ -90,9 +90,60 @@ class ExecutionConfig:
     Arguments template placeholders:
     - {field} → substitutes the value of 'field' from input.yaml
     - {field?} → substitutes if present, omitted if missing
+
+    Constraints:
+    - timeout: subprocess wall-clock timeout in seconds (None = harness default).
+    - max_budget_usd: per-invocation cost cap (None = no cap).
     """
     mode: str = "case"
     arguments: str = ""
+    timeout: Optional[int] = None
+    max_budget_usd: Optional[float] = None
+
+
+@dataclass
+class RunnerConfig:
+    """Which agent harness runs the skill, and runner-specific knobs.
+
+    type: discriminator selecting the runner implementation (e.g. claude-code).
+    Other fields are runner-specific; unused fields are harmless for runners
+    that don't read them.
+    """
+    type: str = "claude-code"
+    settings: dict = field(default_factory=dict)
+    plugins: list = field(default_factory=list)
+    plugin_dirs: list = field(default_factory=list)
+    env_strip: list = field(default_factory=list)
+    system_prompt: Optional[str] = None
+
+
+@dataclass
+class MlflowConfig:
+    """MLflow logging target.
+
+    experiment: experiment name (defaults to EvalConfig.name when blank).
+    tracking_uri: MLflow server URI; if unset, falls back to
+        MLFLOW_TRACKING_URI env var.
+    tags: tags applied to every run logged for this eval.
+    """
+    experiment: str = ""
+    tracking_uri: Optional[str] = None
+    tags: dict = field(default_factory=dict)
+
+
+@dataclass
+class ModelsConfig:
+    """Default models for each role.
+
+    Precedence (high to low):
+    - skill: CLI --model > models.skill (must resolve to non-empty)
+    - subagent: CLI --subagent-model > models.subagent > skill model
+    - judge: per-judge JudgeConfig.model > models.judge > EVAL_JUDGE_MODEL
+      env var (must resolve to non-empty for LLM judges)
+    """
+    skill: Optional[str] = None
+    subagent: Optional[str] = None
+    judge: Optional[str] = None
 
 
 @dataclass
@@ -130,13 +181,19 @@ class EvalConfig:
     name: str = ""
     description: str = ""
     skill: str = ""
-    runner: str = "claude-code"
-    runner_options: dict = field(default_factory=dict)
     permissions: dict = field(default_factory=dict)
-    mlflow_experiment: str = ""
 
-    # Execution — how the skill is invoked
+    # Execution — how the skill is invoked (mode, arguments, timeout, budget)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
+
+    # Runner — which agent harness + runner-specific config
+    runner: RunnerConfig = field(default_factory=RunnerConfig)
+
+    # Models — default models for skill/subagent/judge roles
+    models: ModelsConfig = field(default_factory=ModelsConfig)
+
+    # MLflow logging target
+    mlflow: MlflowConfig = field(default_factory=MlflowConfig)
 
     # Dataset — natural language schema + path
     dataset_path: str = ""
@@ -181,17 +238,46 @@ class EvalConfig:
         execution = ExecutionConfig(
             mode=exec_raw.get("mode", "case"),
             arguments=exec_raw.get("arguments", ""),
+            timeout=exec_raw.get("timeout"),
+            max_budget_usd=exec_raw.get("max_budget_usd"),
+        )
+
+        # Runner config (block form)
+        runner_raw = raw.get("runner") or {}
+        runner = RunnerConfig(
+            type=runner_raw.get("type", "claude-code"),
+            settings=runner_raw.get("settings", {}) or {},
+            plugins=runner_raw.get("plugins", []) or [],
+            plugin_dirs=runner_raw.get("plugin_dirs", []) or [],
+            env_strip=runner_raw.get("env_strip", []) or [],
+            system_prompt=runner_raw.get("system_prompt"),
+        )
+
+        # Models block
+        models_raw = raw.get("models", {}) or {}
+        models = ModelsConfig(
+            skill=models_raw.get("skill"),
+            subagent=models_raw.get("subagent"),
+            judge=models_raw.get("judge"),
+        )
+
+        # MLflow block (experiment defaults to top-level name)
+        mlflow_raw = raw.get("mlflow", {}) or {}
+        mlflow = MlflowConfig(
+            experiment=mlflow_raw.get("experiment") or raw.get("name", ""),
+            tracking_uri=mlflow_raw.get("tracking_uri"),
+            tags=mlflow_raw.get("tags", {}) or {},
         )
 
         config = cls(
             name=raw.get("name", path.stem),
             description=raw.get("description", ""),
             skill=raw.get("skill", ""),
-            runner=raw.get("runner", "claude-code"),
-            runner_options=raw.get("runner_options", {}),
             permissions=raw.get("permissions", {}),
-            mlflow_experiment=raw.get("mlflow_experiment", raw.get("name", "")),
             execution=execution,
+            runner=runner,
+            models=models,
+            mlflow=mlflow,
             dataset_path=_validate_relative_path(
                 dataset.get("path", ""), "dataset.path"),
             dataset_schema=dataset.get("schema", ""),
