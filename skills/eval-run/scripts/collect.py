@@ -43,6 +43,13 @@ def main():
     workspace = Path(args.workspace)
     output_dir = Path(args.output)
 
+    # Per-case mode: outputs are already in case workspaces
+    if config.execution.mode == "case":
+        _collect_per_case(workspace, output_dir, config)
+        return
+
+    # ── Batch mode (below) ───────────────────────────────────────
+
     # Load case order
     order_path = workspace / "case_order.yaml"
     if not order_path.exists():
@@ -106,6 +113,70 @@ def main():
                 shutil.copy2(src_file, dest)
 
             results.setdefault(case_id, {})[out_path] = len(matched_files)
+
+    # Save collection summary
+    with open(output_dir / "collection.json", "w") as f:
+        json.dump(results, f, indent=2)
+
+    for case_id, info in sorted(results.items()):
+        counts = ", ".join(f"{k}={v}" for k, v in info.items())
+        print(f"  {case_id}: {counts}")
+
+    if not results:
+        print("WARNING: no artifacts collected", file=sys.stderr)
+
+
+def _collect_per_case(workspace, output_dir, config):
+    """Collect artifacts from per-case workspaces.
+
+    In per-case mode, each case has its own workspace at
+    workspace/cases/{case_id}/. The skill writes outputs relative to
+    its cwd (the case workspace). We scan for output files matching
+    the configured output paths and copy them to the run output dir.
+    """
+    cases_dir = workspace / "cases"
+    if not cases_dir.exists():
+        print("ERROR: no cases/ directory in workspace", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    results = {}
+
+    for case_dir in sorted(d for d in cases_dir.iterdir() if d.is_dir()):
+        case_id = case_dir.name
+
+        for output_cfg in config.outputs:
+            if not output_cfg.path:
+                continue  # Skip tool-only outputs (no filesystem path)
+            out_path = _safe_path_component(output_cfg.path, "output path")
+            src = case_dir / out_path
+
+            if not src.exists():
+                continue
+
+            if src.is_file():
+                files = [src]
+                src_base = src.parent
+            else:
+                files = sorted(f for f in src.rglob("*") if f.is_file())
+                src_base = src
+
+            if not files:
+                continue
+
+            case_output = output_dir / "cases" / case_id / out_path
+            case_output.mkdir(parents=True, exist_ok=True)
+
+            for f in files:
+                # Reject symlinks (CWE-59)
+                if f.is_symlink():
+                    continue
+                rel = f.relative_to(src_base)
+                dest = case_output / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, dest)
+
+            results.setdefault(case_id, {})[out_path] = len(files)
 
     # Save collection summary
     with open(output_dir / "collection.json", "w") as f:

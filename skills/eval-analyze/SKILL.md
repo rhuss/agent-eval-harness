@@ -89,12 +89,13 @@ First check if eval.yaml already has a `dataset.path` (from a previous run or `-
 ls <dataset_path>/ 2>/dev/null | head -20
 ```
 
-If not set or doesn't exist, search the project for test case directories:
+If not set or doesn't exist, search the project for test case directories using the Glob tool:
 
-```bash
-find . -type d \( -name "cases" -o -name "test-cases" -o -name "fixtures" -o -name "examples" \) \
-  -not -path "./.venv/*" -not -path "./.git/*" -not -path "./node_modules/*" 2>/dev/null
 ```
+Glob: **/cases/ or **/test-cases/ or **/fixtures/ or **/examples/
+```
+
+Exclude `.venv/`, `.git/`, `node_modules/` from results.
 
 If nothing found, ask the user where their test cases are (or will be).
 
@@ -113,6 +114,8 @@ If no test cases exist, note this clearly and suggest running `/eval-dataset` to
 Combine the skill analysis (Step 3) and dataset exploration (Step 4) into a complete eval.yaml. Read the full template and writing guidance at `${CLAUDE_SKILL_DIR}/references/eval-yaml-template.md`.
 
 Key points:
+- **Execution mode**: determine from the skill analysis whether it expects a single input (`mode: case`) or a batch file (`mode: batch`). Look at `$ARGUMENTS` in the SKILL.md — if it takes one value (a key, prompt, or file path), use `case`. If it takes `--input <file>` with a YAML list, or has parallelism/batch-size controls, use `batch`. When in doubt, use `case`.
+- **Arguments template**: for `case` mode, build a template with `{field}` placeholders matching the input.yaml fields you observed in Step 4 (e.g., `"{strat_key} {adr_file?}"`). For `batch` mode, use the literal arguments string (e.g., `"--input batch.yaml --headless"`).
 - The `dataset.schema` and `outputs[*].schema` fields drive the entire pipeline — be specific, reference actual file/field names you observed
 - If the skill uses AskUserQuestion, calls external services (MCP tools), or runs scripts that interact with APIs, add `inputs.tools` entries. Use `match` to describe what to intercept in natural language (e.g., "any Jira interaction via MCP or scripts"), and `prompt` for how to handle it.
 - Aim for 2-4 inline `check` judges + 1-2 LLM `prompt` judges. Start lean.

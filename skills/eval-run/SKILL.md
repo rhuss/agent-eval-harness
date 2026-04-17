@@ -75,11 +75,11 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/preflight.py \
   [--run-id <id>]
 ```
 
-The script checks all output paths from eval.yaml plus `tmp/` state files. It also checks whether `eval/runs/<id>` already has results from a previous run.
+The script checks `tmp/` state files and whether `$AGENT_EVAL_RUNS_DIR/<id>` already has results from a previous run.
 
 - **If `CLEAN`**: proceed to workspace setup.
 - **If `DIRTY`**: report the findings to the user and ask what to do:
-  - **Force clean**: run `preflight.py --clean` to delete all stale artifacts, then proceed.
+  - **Force clean**: run `preflight.py --clean --force` to delete all stale artifacts, then proceed.
   - **Change run-id**: append a version suffix (e.g., `2026-04-11-opus-v2`) and re-check. This avoids overwriting previous run results but still requires cleaning project artifacts — re-run preflight with `--clean` and the new run-id.
   - **Abort**: let the user handle cleanup manually.
 
@@ -115,7 +115,9 @@ The hook script (`tools.py`) uses these concrete checks at runtime — no LLM ne
 
 ## Step 4: Execute Skill
 
-Run the skill headlessly against all cases. The execute script handles CLI construction, streaming progress, and result capture:
+Run the skill headlessly against test cases. In `case` mode (default), execute.py runs the skill once per case with case-specific arguments and workspace — each case gets its own stdout.log and subagent transcripts. In `batch` mode, all cases run in a single invocation via batch.yaml.
+
+The execute script handles CLI construction, streaming progress, and result capture:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/execute.py \
@@ -132,7 +134,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/execute.py \
 
 Pass `--agent` with the `runner` value from eval.yaml (default: `claude-code`).
 
-The `--skill-args` value is the argument string for the skill invocation (e.g., `"--input batch.yaml --headless"`). If omitted, execute.py uses the `arguments` field from eval.yaml. Override via CLI only when testing different argument combinations.
+The `--skill-args` value is the argument string for the skill invocation (e.g., `"--input batch.yaml --headless"`). If omitted, execute.py uses `execution.arguments` from eval.yaml. In `case` mode, `{field}` placeholders are resolved per case from input.yaml. Override via CLI only when testing different argument combinations.
 
 ### Monitoring Progress
 

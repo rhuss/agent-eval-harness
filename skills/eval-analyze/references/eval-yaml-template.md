@@ -8,8 +8,30 @@ Use this template when generating eval.yaml. Fill in every field from what you o
 name: <project-name>
 description: <one line: what is being evaluated>
 skill: <skill-name>
-arguments: <arguments passed to the skill invocation, from SKILL.md $ARGUMENTS>
 runner: claude-code
+
+# Execution — how the skill processes test cases
+#
+# How to choose the mode:
+# - case (default): the skill expects ONE input and runs a pipeline on it.
+#   Signs: $ARGUMENTS is a single value (Jira key, prompt, file path),
+#   the skill runs phases sequentially on that input, then exits.
+#   Examples: /test-plan.create RHAISTRAT-1520, /rfe.create "problem..."
+#
+# - batch: the skill accepts a BATCH FILE and processes multiple items
+#   in one invocation. Signs: the skill has --input flag that takes a
+#   YAML list, it iterates over entries internally, it has batch-size
+#   or parallelism controls (--batch-size, --parallel, --concurrency).
+#   Parallelism options are a strong signal — if the skill manages
+#   concurrency itself, it's doing batch processing.
+#   Examples: /rfe.speedrun --input batch.yaml, /rfe.auto-fix --input ids.yaml
+#
+# When in doubt, use case — it's safer (each case gets full isolation).
+execution:
+  mode: case
+  arguments: <argument template with {field} placeholders from input.yaml>
+  # Case examples: "{prompt}", "{strat_key} {adr_file?}"
+  # Batch example: "--input batch.yaml --headless --dry-run"
 
 # Permissions for headless execution
 permissions:

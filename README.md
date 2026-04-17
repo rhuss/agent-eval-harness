@@ -106,8 +106,12 @@ The harness uses natural language to describe evaluation datasets and skills inp
 name: my-skill-eval
 description: Evaluate the main skill pipeline
 skill: my-skill-name
-arguments: "--headless"  # Arguments passed to the skill
 runner: claude-code
+
+# Execution — how the skill processes test cases
+execution:
+  mode: case              # case (default) or batch
+  arguments: "{prompt}"   # resolved per case from input.yaml fields
 
 # Permissions — tool access during headless execution
 permissions:
@@ -228,7 +232,7 @@ thresholds:
 
 ### Key concepts
 
-- **`arguments`** — arguments string passed to the skill invocation (e.g., `"--input batch.yaml --headless"`). Stored in eval.yaml for reproducibility; can be overridden via `--skill-args` on execute.py.
+- **`execution`** — `mode` (`case` or `batch`) and `arguments` template. In `case` mode (default), the skill is invoked once per test case with `{field}` placeholders resolved from each case's input.yaml. In `batch` mode, all cases are bundled into batch.yaml for a single invocation.
 - **`schema`** — natural language description of structure. Used on `dataset` and each `outputs` entry. Agents and judges read these to understand the data.
 - **`inputs.tools`** — tool interception for headless execution. Each entry has a `match` (natural language description of what to intercept — tools, scripts, APIs) and a `prompt` (how to handle it). eval-analyze generates these from skill analysis; eval-run resolves them to concrete patterns at setup time.
 - **`outputs`** — two types: `path` for file artifacts on disk, `tool` for tool call side effects (Jira, APIs). Both have `schema` descriptions.
@@ -246,6 +250,9 @@ thresholds:
 name: rfe-creator
 skill: rfe.speedrun
 runner: claude-code
+execution:
+  mode: batch
+  arguments: "--input batch.yaml --headless --dry-run"
 mlflow_experiment: rfe-eval
 permissions:
   deny: ["mcp__atlassian__*"]  # Block Jira writes during eval

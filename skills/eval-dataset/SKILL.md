@@ -19,6 +19,7 @@ You generate evaluation test cases for a skill. You read the skill analysis (eva
 
 Read eval.yaml and eval.md to understand:
 - **The skill** — what it does, what inputs it expects, what it produces
+- **The execution config** — `execution.mode` (`case` or `batch`) and `execution.arguments` (the argument template). In `case` mode, `{field}` placeholders in the arguments are resolved per case from input.yaml — every field referenced in the template (e.g., `{strat_key}`, `{prompt}`) must exist in the generated input.yaml files.
 - **The dataset schema** — `dataset.schema` describes the case structure (files, fields, formats)
 - **The dataset path** — where cases should be created
 - **The output schema** — `outputs[*].schema` describes what the skill produces (informs what reference outputs look like)
@@ -53,7 +54,9 @@ Read `dataset.schema` and extract a concrete checklist:
 4. **Field semantics** — what kind of content each field expects (e.g., "problem statement", "clarifying context", "priority level"). Use these descriptions to generate realistic content, not generic placeholders
 5. **Naming patterns** — any file naming conventions mentioned (e.g., "named NNN-slug.md")
 
-This checklist is your generation template. Every case must satisfy items 1-2. Items 3-4 guide content variety.
+6. **Argument fields** — if `execution.mode` is `case`, parse `execution.arguments` for `{field}` placeholders. Every placeholder must appear as a required field in input.yaml. Cross-check against items 1-2 above — if `{strat_key}` is in the arguments but not in the schema, add it as a required field.
+
+This checklist is your generation template. Every case must satisfy items 1-2 and 6. Items 3-4 guide content variety.
 
 ## Step 3: Assess Current State
 
@@ -129,6 +132,8 @@ case-005-ambiguous-phrasing/
 
 If unsure what questions the skill asks, leave `answers.yaml` out — the hook script auto-accepts with "yes" or the first option.
 
+**Companion files**: If eval.md lists `companion_files` (files the skill reads from disk at runtime — e.g., `strategy.md`, `adr.md`), each test case must include them. In `case` mode, the harness copies all case files into the workspace, so the skill will find them at their expected relative paths. Generate realistic content for these files appropriate to each case's scenario.
+
 **Reference outputs**: Only include gold standard reference files if you can confidently produce a correct output. It's better to leave references out (the user can generate them later with `/eval-run --gold`) than to include incorrect ones that mislead judges.
 
 ## Step 6: Validate
@@ -137,7 +142,9 @@ After generating, verify the cases:
 
 1. Read one generated case back and check it matches the schema
 2. Count files per case — do they match what `dataset.schema` describes?
-3. Check for obvious issues (empty files, placeholder text, wrong field names)
+3. If `execution.mode` is `case`, verify that input.yaml contains all fields referenced by `{field}` placeholders in `execution.arguments`
+4. If companion files are expected, verify they exist in each case directory
+5. Check for obvious issues (empty files, placeholder text, wrong field names)
 
 ```bash
 ls <dataset_path>/case-001-*/ 
@@ -151,7 +158,7 @@ Tell the user what was created:
 - **Strategy used**: bootstrap / expand / from-traces
 - **Coverage**: What scenarios are now covered (simple, complex, edge cases)
 - **What's missing**: Reference outputs (if not generated), any gaps still remaining
-- **Next steps**:
+- **Next steps** (include `--config <config>` if a non-default config was used):
   - `/eval-run --model <model>` to test the skill against these cases
   - `/eval-run --model <model> --gold` to generate gold references from the best outputs
   - `/eval-dataset --strategy expand --count 10` to add more cases later

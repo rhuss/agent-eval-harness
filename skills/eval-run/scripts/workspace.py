@@ -68,6 +68,13 @@ def main():
         shutil.rmtree(workspace)
     workspace.mkdir(parents=True, mode=0o700)
 
+    # Branch on execution mode
+    if config.execution.mode == "case":
+        _create_per_case_workspace(workspace, case_dirs, config, args)
+        return
+
+    # ── Batch mode (below) ───────────────────────────────────────
+
     # Create output directories from config
     for output in config.outputs:
         if output.path and output.path != ".":
@@ -154,6 +161,86 @@ def main():
     print(f"WORKSPACE: {workspace}")
     print(f"CASES: {len(case_dirs)}")
     print(f"BATCH: {workspace / 'batch.yaml'}")
+
+
+def _create_per_case_workspace(workspace, case_dirs, config, args):
+    """Create a separate workspace per case for per-case execution.
+
+    Each case gets its own workspace subdirectory with:
+    - All files from the dataset case directory (input.yaml, strategy.md, etc.)
+    - Symlinked project resources (scripts, skills, .context, CLAUDE.md)
+    - Tool interception hooks and SubagentStop hook
+    - Output directories from eval.yaml
+    """
+    project_root = Path.cwd()
+    default_symlinks = ["scripts", ".claude", "CLAUDE.md", ".context", "skills"]
+    symlink_names = (
+        [s.strip() for s in args.symlinks.split(",") if s.strip()]
+        if args.symlinks else default_symlinks
+    )
+
+    case_order = []
+
+    for case_dir in case_dirs:
+        case_id = case_dir.name
+        case_ws = workspace / "cases" / case_id
+        case_ws.mkdir(parents=True, exist_ok=True)
+
+        # Copy ALL files from the dataset case directory (H-2)
+        for f in case_dir.iterdir():
+            if f.is_file():
+                shutil.copy2(f, case_ws / f.name)
+            elif f.is_dir():
+                shutil.copytree(f, case_ws / f.name, dirs_exist_ok=True)
+
+        # Create output directories
+        for output in config.outputs:
+            if output.path and output.path != ".":
+                out = case_ws / output.path
+                if out.suffix:
+                    out.parent.mkdir(parents=True, exist_ok=True)
+                else:
+                    out.mkdir(parents=True, exist_ok=True)
+
+        # Symlink project resources (skip .claude — we create our own)
+        for name in symlink_names:
+            if name == ".claude":
+                continue
+            p = Path(name)
+            if p.is_absolute() or ".." in p.parts:
+                continue
+            target = project_root / name
+            link = case_ws / name
+            if target.exists() and not link.exists():
+                link.symlink_to(target.resolve())
+
+        # Symlink .claude subdirectories (skills/, etc.)
+        claude_dir = project_root / ".claude"
+        if claude_dir.is_dir():
+            for sub in claude_dir.iterdir():
+                if sub.is_dir() and sub.name != "settings.json":
+                    link = case_ws / ".claude" / sub.name
+                    if not link.exists():
+                        link.parent.mkdir(parents=True, exist_ok=True)
+                        link.symlink_to(sub.resolve())
+
+        # Set up hooks (tool interception + SubagentStop)
+        if config.inputs.tools:
+            _setup_tool_hooks(case_ws, config)
+        else:
+            _setup_subagent_only_hook(case_ws)
+
+        case_order.append({"case_id": case_id})
+
+    # Write case order at the parent workspace level
+    with open(workspace / "case_order.yaml", "w") as f:
+        yaml.dump(case_order, f, default_flow_style=False)
+
+    print(f"WORKSPACE: {workspace}")
+    print(f"MODE: case")
+    print(f"CASES: {len(case_dirs)}")
+    for entry in case_order:
+        print(f"  {entry['case_id']}: {workspace / 'cases' / entry['case_id']}")
 
 
 def _read_input(case_dir):

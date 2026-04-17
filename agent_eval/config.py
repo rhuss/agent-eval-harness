@@ -79,6 +79,23 @@ class InputsConfig:
 
 
 @dataclass
+class ExecutionConfig:
+    """How the skill is invoked against test cases.
+
+    Modes:
+    - case (default): one skill invocation per case, with case-specific
+      arguments resolved from input.yaml fields via {field} placeholders.
+    - batch: all cases in one invocation via batch.yaml.
+
+    Arguments template placeholders:
+    - {field} → substitutes the value of 'field' from input.yaml
+    - {field?} → substitutes if present, omitted if missing
+    """
+    mode: str = "case"
+    arguments: str = ""
+
+
+@dataclass
 class JudgeConfig:
     """Configuration for a single judge.
 
@@ -113,11 +130,13 @@ class EvalConfig:
     name: str = ""
     description: str = ""
     skill: str = ""
-    arguments: str = ""
     runner: str = "claude-code"
     runner_options: dict = field(default_factory=dict)
     permissions: dict = field(default_factory=dict)
     mlflow_experiment: str = ""
+
+    # Execution — how the skill is invoked
+    execution: ExecutionConfig = field(default_factory=ExecutionConfig)
 
     # Dataset — natural language schema + path
     dataset_path: str = ""
@@ -157,15 +176,22 @@ class EvalConfig:
         # Dataset
         dataset = raw.get("dataset", {})
 
+        # Execution config
+        exec_raw = raw.get("execution", {})
+        execution = ExecutionConfig(
+            mode=exec_raw.get("mode", "case"),
+            arguments=exec_raw.get("arguments", ""),
+        )
+
         config = cls(
             name=raw.get("name", path.stem),
             description=raw.get("description", ""),
             skill=raw.get("skill", ""),
-            arguments=raw.get("arguments", ""),
             runner=raw.get("runner", "claude-code"),
             runner_options=raw.get("runner_options", {}),
             permissions=raw.get("permissions", {}),
             mlflow_experiment=raw.get("mlflow_experiment", raw.get("name", "")),
+            execution=execution,
             dataset_path=_validate_relative_path(
                 dataset.get("path", ""), "dataset.path"),
             dataset_schema=dataset.get("schema", ""),

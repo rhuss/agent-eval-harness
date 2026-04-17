@@ -80,7 +80,7 @@ skills/eval-optimize/    # Skill: automated refinement loop
 
 Skills projects create an `eval.yaml` config file with:
 - `skill` — skill to evaluate
-- `arguments` — arguments string passed to the skill invocation
+- `execution` — `mode` (`case` or `batch`) and `arguments` template with `{field}` placeholders
 - `runner` — agent runner (`claude-code`, etc.), `runner_options` for runner-specific settings
 - `permissions` — `allow`/`deny` tool patterns for headless execution
 - `dataset` — `path` to test cases directory, `schema` describing case structure in natural language
