@@ -39,10 +39,8 @@ except ImportError:
           file=sys.stderr)
     sys.exit(0)
 
-mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
-
 from agent_eval.config import EvalConfig
-from agent_eval.mlflow.experiment import log_feedback
+from agent_eval.mlflow.experiment import log_feedback, resolve_tracking_uri
 from agent_eval.mlflow.traces import find_run_traces
 
 
@@ -59,10 +57,11 @@ def main():
     args = parser.parse_args()
 
     config = EvalConfig.from_yaml(args.config)
+    mlflow.set_tracking_uri(resolve_tracking_uri(config))
     runs_dir = Path(os.environ.get("AGENT_EVAL_RUNS_DIR", "eval/runs"))
     run_dir = runs_dir / args.run_id
 
-    experiment_name = config.mlflow_experiment or config.name
+    experiment_name = config.mlflow.experiment or config.name
 
     if args.action == "pull":
         _pull_feedback(run_dir, experiment_name, args)

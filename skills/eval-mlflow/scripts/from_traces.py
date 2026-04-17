@@ -14,7 +14,6 @@ Usage:
 """
 
 import argparse
-import os
 import sys
 
 import yaml
@@ -26,10 +25,8 @@ except ImportError:
           file=sys.stderr)
     sys.exit(0)
 
-mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
-
 from agent_eval.config import EvalConfig
-from agent_eval.mlflow.experiment import get_experiment_id
+from agent_eval.mlflow.experiment import get_experiment_id, resolve_tracking_uri
 from agent_eval.mlflow.traces import extract_trace_inputs
 
 
@@ -44,10 +41,11 @@ def main():
     args = parser.parse_args()
 
     config = EvalConfig.from_yaml(args.config)
-    experiment_name = args.experiment or config.mlflow_experiment or config.name
+    mlflow.set_tracking_uri(resolve_tracking_uri(config))
+    experiment_name = args.experiment or config.mlflow.experiment or config.name
 
     if not experiment_name:
-        print("ERROR: no experiment name (set mlflow_experiment in eval.yaml "
+        print("ERROR: no experiment name (set mlflow.experiment in eval.yaml "
               "or pass --experiment)", file=sys.stderr)
         sys.exit(1)
 

@@ -28,10 +28,7 @@ except ImportError:
     sys.exit(0)
 
 from agent_eval.config import EvalConfig
-
-# Ensure tracking URI is set — default to localhost server (same as tracing hook)
-_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
-mlflow.set_tracking_uri(_tracking_uri)
+from agent_eval.mlflow.experiment import resolve_tracking_uri
 
 
 # ── Trace builder (extracted to agent_eval/mlflow/trace_builder.py) ──
@@ -49,6 +46,7 @@ def main():
     args = parser.parse_args()
 
     config = EvalConfig.from_yaml(args.config)
+    mlflow.set_tracking_uri(resolve_tracking_uri(config))
     runs_dir = Path(os.environ.get("AGENT_EVAL_RUNS_DIR", "eval/runs"))
     run_dir = runs_dir / args.run_id
 
@@ -69,7 +67,7 @@ def main():
             run_result = json.load(f)
 
     # Set experiment
-    experiment_name = config.mlflow_experiment or config.name
+    experiment_name = config.mlflow.experiment or config.name
     mlflow.set_experiment(experiment_name)
     client = MlflowClient()
 
@@ -83,7 +81,7 @@ def main():
         # ── Params ───────────────────────────────────────────────
         params = {
             "skill": config.skill,
-            "runner": config.runner,
+            "runner": config.runner.type,
             "run_id": args.run_id,
             "model": run_result.get("model", ""),
         }
@@ -154,6 +152,8 @@ def main():
                         has_regressions = True
         mlflow.set_tag("regressions_detected", "yes" if has_regressions else "no")
         mlflow.set_tag("num_judges", str(len(judges)))
+        for tag_key, tag_value in (config.mlflow.tags or {}).items():
+            mlflow.set_tag(tag_key, str(tag_value))
 
         # ── Artifact ─────────────────────────────────────────────
         if summary_path.exists():

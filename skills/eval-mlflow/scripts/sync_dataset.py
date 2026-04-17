@@ -42,10 +42,9 @@ except ImportError:
           file=sys.stderr)
     sys.exit(0)
 
-mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
-
 from agent_eval.config import EvalConfig
 from agent_eval.mlflow.datasets import get_or_create_dataset, sync_records
+from agent_eval.mlflow.experiment import resolve_tracking_uri
 
 
 def main():
@@ -59,6 +58,7 @@ def main():
     args = parser.parse_args()
 
     config = EvalConfig.from_yaml(args.config)
+    mlflow.set_tracking_uri(resolve_tracking_uri(config))
 
     # Load mapping
     mapping_path = Path(args.mapping)
@@ -115,7 +115,7 @@ def main():
 
     # Sync to MLflow
     dataset_name = args.dataset_name or config.name or "eval-dataset"
-    experiment_name = config.mlflow_experiment or config.name
+    experiment_name = config.mlflow.experiment or config.name
 
     dataset = get_or_create_dataset(dataset_name, experiment_name)
     if not dataset:
