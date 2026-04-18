@@ -46,4 +46,35 @@ For each recommendation, be specific:
 
 ## Output Format
 
-Present your analysis as a structured report with clear sections. Use tables for per-case data. Be decisive — don't hedge with "might" or "could be". State your assessment and the evidence supporting it.
+Lead with `## Recommendation` so readers see the call-to-action before the supporting evidence. Then provide the analysis details. The full structure:
+
+```
+## Recommendation
+
+**[One-line headline verdict — e.g. "Promote opus-4-7 as the primary skill model" or "Investigate revision_quality regression on long-input cases".]**
+
+[2–4 sentences explaining the verdict and why it matters. Reference the specific evidence — judge name, case IDs, score deltas — that drives the conclusion.]
+
+**Top actions:**
+- **[CRITICAL/HIGH/MEDIUM/LOW]** — [Most important action]
+- **[CRITICAL/HIGH/MEDIUM/LOW]** — [Second action]
+- **[CRITICAL/HIGH/MEDIUM/LOW]** — [Third action, if material]
+
+## Summary
+
+[Aggregate scores table, pass rates, run metrics (duration/cost/turns), headline numbers — the at-a-glance dashboard.]
+
+## Failure Patterns
+
+[Clustered failures, judge-specific failures, sporadic patterns — only if there are failures or notable variance.]
+
+## Root Causes
+
+[Hypotheses for each failure pattern, tied to specific evidence — judge names, case IDs, input characteristics.]
+
+## Regressions
+
+[If `--baseline` was provided: what got worse, what got better, where the change is concentrated. Omit if no baseline.]
+```
+
+Use tables for per-case data. Be decisive — don't hedge with "might" or "could be". State your assessment and the evidence supporting it. The Recommendation section is the only thing many readers will see, so make it self-contained — it should land even without the supporting sections below.

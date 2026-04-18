@@ -261,25 +261,31 @@ pairwise:  # only if --baseline was used
 
 ## Step 7: Interpret and Report
 
-Read the summary and analyze the results. Use the framework in `${CLAUDE_SKILL_DIR}/prompts/analyze-results.md` for structure:
+Read the summary and analyze the results. Use the framework in `${CLAUDE_SKILL_DIR}/prompts/analyze-results.md` for structure. Analyze in this order, but write the output with the **Recommendation first** so the call-to-action is the first thing the reader sees:
 
 1. **Aggregate scores** — pass/fail per judge, mean scores, pass rates. Present as a table.
 2. **Failure patterns** — are failures clustered by case (bad input?) or by judge (systematic skill issue)?
 3. **Regressions** — if baseline provided, what got worse? What got better?
 4. **Root cause hypotheses** — based on the failures, what might be wrong in the skill? Be specific — reference actual judge names and case IDs.
-5. **Recommendations** — what should the user do next? Prioritize: CRITICAL (blocks usage) → HIGH (systematic) → MEDIUM (edge cases) → LOW (nice-to-have).
+5. **Recommendation** — synthesize the above into a headline verdict + 2–4 prioritized actions tagged CRITICAL (blocks usage) / HIGH (systematic) / MEDIUM (edge cases) / LOW (nice-to-have).
 
 Be decisive — state assessments, not hedges. "The skill fails to produce reviews for cases with long inputs" is better than "there might be an issue with some cases."
 
-**Save analysis to file** so it persists in the report:
+**Save analysis to file** so it persists in the report. Prepend YAML frontmatter recording the agent and model that wrote the analysis, plus the UTC timestamp — the report uses these to attribute the analysis in its subtitle:
 
 ```bash
 cat > $AGENT_EVAL_RUNS_DIR/<id>/analysis.md << 'EOF'
-<your full analysis here — key findings, failure patterns, root causes, recommendations>
+---
+agent: Claude Code        # the agent/runtime writing this analysis (e.g. Claude Code)
+model: <your-model-id>   # e.g. claude-opus-4-7, claude-sonnet-4-6 — the model backing the agent
+date: <UTC ISO 8601>     # e.g. 2026-04-17T14:32:11Z
+---
+
+<your full analysis — Recommendation first, then Summary, Failure Patterns, Root Causes, Regressions>
 EOF
 ```
 
-Write the analysis as markdown with `## Key Findings` and `## Recommendations` sections. This file is included in the HTML report automatically.
+Write the analysis body as markdown with these sections in order: `## Recommendation` (verdict + top actions), `## Summary` (aggregate scores, run metrics), `## Failure Patterns`, `## Root Causes`, `## Regressions` (only if `--baseline` was provided). The Recommendation must be self-contained — many readers will only read that section. This file is rendered as a prominent callout near the top of the HTML report; the frontmatter is consumed by the report renderer and not displayed verbatim.
 
 **Generate HTML report**:
 
