@@ -111,7 +111,8 @@ def main():
     # ── Per-case execution ───────────────────────────────────────
     if config.execution.mode == "case":
         _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
-                          system_prompt, eval_params=eval_params)
+                          system_prompt, skill_args_template=skill_args,
+                          eval_params=eval_params)
         return
 
     # ── Batch execution (below) ──────────────────────────────────
@@ -198,9 +199,18 @@ def _build_eval_params(args, config, skill_args, max_budget, timeout_s):
 
 
 def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
-                      system_prompt="", eval_params=None):
-    """Execute the skill once per case with case-specific arguments."""
+                      system_prompt="", skill_args_template=None, eval_params=None):
+    """Execute the skill once per case with case-specific arguments.
+
+    `skill_args_template` is the resolved invocation pattern (CLI override
+    falls back to config.execution.arguments) and must be the same value
+    captured in eval_params so the report does not advertise args that
+    weren't used.
+    """
     import yaml as _yaml
+
+    if skill_args_template is None:
+        skill_args_template = config.execution.arguments
 
     workspace = Path(args.workspace)
     case_order_path = workspace / "case_order.yaml"
@@ -228,7 +238,7 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
             continue
 
         # Resolve per-case arguments from input.yaml
-        case_args = config.execution.arguments
+        case_args = skill_args_template
         input_path = case_ws / "input.yaml"
         if input_path.exists() and case_args:
             case_data = _yaml.safe_load(input_path.read_text()) or {}

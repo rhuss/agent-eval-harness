@@ -48,7 +48,7 @@ For each recommendation, be specific:
 
 Lead with `## Recommendation` so readers see the call-to-action before the supporting evidence. Then provide the analysis details. The full structure:
 
-```
+```markdown
 ## Recommendation
 
 **[One-line headline verdict — e.g. "Promote opus-4-7 as the primary skill model" or "Investigate revision_quality regression on long-input cases".]**
