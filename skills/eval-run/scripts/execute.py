@@ -105,10 +105,14 @@ def main():
         existing_prompt = str(config.runner_options.get("system_prompt", "")).strip()
     system_prompt = "\n\n".join(p for p in [existing_prompt, _HARNESS_SYSTEM_PROMPT] if p)
 
+    # Capture user-facing eval parameters that defined this run, for the report.
+    eval_params = _build_eval_params(args, config, skill_args, max_budget, timeout_s)
+
     # ── Per-case execution ───────────────────────────────────────
     if config.execution.mode == "case":
         _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
-                          system_prompt)
+                          system_prompt, skill_args_template=skill_args,
+                          eval_params=eval_params)
         return
 
     # ── Batch execution (below) ──────────────────────────────────
@@ -137,7 +141,7 @@ def main():
         timeout_s=timeout_s,
     )
 
-    _save_result(result, args, output_dir, runner)
+    _save_result(result, args, output_dir, runner, eval_params=eval_params)
     sys.exit(result.exit_code)
 
 
@@ -173,10 +177,40 @@ def _resolve_arguments(template, case_data):
     return result
 
 
+def _build_eval_params(args, config, skill_args, max_budget, timeout_s):
+    """Snapshot the user-facing eval parameters that defined this run.
+
+    Surfaced in the HTML report so reviewers can see *what was run* without
+    inspecting the harness invocation. Only includes parameters that are
+    meaningful to a reader: the dataset/skill args, budget caps, execution
+    mode, and optional flags actually set."""
+    params = {
+        "skill": args.skill,
+        "skill_args": skill_args or "",
+        "execution_mode": config.execution.mode,
+        "max_budget_usd": max_budget,
+        "timeout_s": timeout_s,
+    }
+    if getattr(args, "effort", None):
+        params["effort"] = args.effort
+    if getattr(args, "mlflow_experiment", None):
+        params["mlflow_experiment"] = args.mlflow_experiment
+    return params
+
+
 def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
-                      system_prompt=""):
-    """Execute the skill once per case with case-specific arguments."""
+                      system_prompt="", skill_args_template=None, eval_params=None):
+    """Execute the skill once per case with case-specific arguments.
+
+    `skill_args_template` is the resolved invocation pattern (CLI override
+    falls back to config.execution.arguments) and must be the same value
+    captured in eval_params so the report does not advertise args that
+    weren't used.
+    """
     import yaml as _yaml
+
+    if skill_args_template is None:
+        skill_args_template = config.execution.arguments
 
     workspace = Path(args.workspace)
     case_order_path = workspace / "case_order.yaml"
@@ -204,7 +238,7 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
             continue
 
         # Resolve per-case arguments from input.yaml
-        case_args = config.execution.arguments
+        case_args = skill_args_template
         input_path = case_ws / "input.yaml"
         if input_path.exists() and case_args:
             case_data = _yaml.safe_load(input_path.read_text()) or {}
@@ -283,6 +317,7 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
         "agent": runner.name,
         "agent_version": getattr(runner, "version", ""),
         "execution_mode": "case",
+        "eval_params": eval_params or {},
         "per_case": case_results,
     }
     with open(output_dir / "run_result.json", "w") as f:
@@ -299,7 +334,7 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
     sys.exit(worst_exit)
 
 
-def _save_result(result, args, output_dir, runner):
+def _save_result(result, args, output_dir, runner, eval_params=None):
     """Save batch execution results (stdout, stderr, run_result.json)."""
     if result.stdout:
         (output_dir / "stdout.log").write_text(result.stdout)
@@ -334,6 +369,7 @@ def _save_result(result, args, output_dir, runner):
         "agent": runner.name,
         "agent_version": getattr(runner, "version", ""),
         "execution_mode": "batch",
+        "eval_params": eval_params or {},
     }
     run_result_path = output_dir / "run_result.json"
     with open(run_result_path, "w") as f:

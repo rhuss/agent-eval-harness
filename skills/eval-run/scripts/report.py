@@ -177,60 +177,284 @@ def _read_case_input(dataset_path: str, case_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 CSS = """
-body { font-family: -apple-system, sans-serif; max-width: 100%; margin: 2em auto; padding: 0 1em; color: #1a1a1a; }
-h1 { border-bottom: 2px solid #333; padding-bottom: 0.3em; }
-h2 { margin-top: 1.5em; }
-table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-th { background: #f5f5f5; }
-.pass { color: #16a34a; font-weight: bold; }
-.fail { color: #dc2626; font-weight: bold; }
-.skip { color: #9ca3af; }
-.warn { color: #d97706; font-weight: bold; }
-.metric-row td:last-child { font-family: monospace; }
-details.case { margin: 1em 0; border: 1px solid #d0d0d0; border-radius: 8px; padding: 1em; background: #fafafa; }
-details.case > summary { cursor: pointer; font-weight: bold; padding: 0.3em 0; font-size: 1.05em; }
-details.case > summary:hover { color: #2563eb; }
-.info-box { background: #f0f4ff; border: 1px solid #c0d0f0; border-radius: 4px; padding: 0.8em; margin: 0.5em 0; font-size: 0.9em; }
-.feedback-box { background: #fffbeb; border: 1px solid #f0e0a0; border-radius: 4px; padding: 0.8em; margin: 0.5em 0; font-size: 0.9em; }
-.file-badge { display: inline-block; font-family: monospace; font-size: 0.85em; background: #e8eef4; border: 1px solid #c0cfe0; border-radius: 4px; padding: 3px 10px; margin: 1em 0 0.5em 0; color: #2c3e50; }
-.pw-badge { display: inline-block; font-size: 0.8em; font-weight: bold; padding: 1px 8px; border-radius: 3px; margin-left: 8px; }
-.pw-win { background: #d4edda; color: #155724; }
-.pw-loss { background: #f8d7da; color: #721c24; }
-.pw-tie { background: #fff3cd; color: #856404; }
-.pw-error { background: #e2e3e5; color: #6c757d; }
-.diff-table { width: 100%; border-collapse: collapse; font-family: monospace; font-size: 0.82em; table-layout: fixed; }
-.diff-table td { padding: 1px 6px; vertical-align: top; white-space: pre-wrap; word-wrap: break-word; border: 1px solid #e0e0e0; }
-.diff-table .ln { width: 35px; min-width: 35px; color: #999; text-align: right; background: #fafafa; user-select: none; white-space: nowrap; }
-.diff-table .left { width: calc(50% - 35px); background: #fff; }
-.diff-table .right { width: calc(50% - 35px); background: #fff; }
-.diff-table .sep { width: 1px; padding: 0; background: #ccc; }
-.diff-table tr.mod .left { background: #ffeef0; }
-.diff-table tr.mod .right { background: #e6ffec; }
-.diff-table tr.add .right { background: #e6ffec; }
-.diff-table tr.add .left { background: #fafafa; }
-.diff-table tr.del .left { background: #ffeef0; }
-.diff-table tr.del .right { background: #fafafa; }
-.diff-table tr.hdr td { background: #f0f0f0; color: #666; font-weight: bold; }
-.diff-table .wdel { background: #fdb8c0; border-radius: 2px; }
-.diff-table .wadd { background: #acf2bd; border-radius: 2px; }
-pre.output { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 0.8em; font-size: 0.92em; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
-.html-preview { width: 100%; height: 80vh; max-height: 2000px; border: 1px solid #d0d0d0; border-radius: 4px; margin: 0.5em 0; background: #fff; }
-.analysis { background: #f8fafc; border: 1px solid #d0dae8; border-radius: 8px; padding: 1.2em; margin: 1.5em 0; }
-.analysis h2 { margin-top: 0; }
-.analysis h3 { margin-top: 1em; color: #334155; }
-.analysis li { margin: 0.3em 0; line-height: 1.5; }
-.analysis code { background: #e2e8f0; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+:root {
+  --bg: #cbd1da;
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --surface-3: #e2e8f0;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --text-soft: #475569;
+  --accent: #2563eb;
+  --accent-strong: #1e3a8a;
+  --accent-soft: #dbeafe;
+  --success: #16a34a;
+  --success-soft: #dcfce7;
+  --success-border: #86efac;
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+  --danger-border: #fca5a5;
+  --warning: #d97706;
+  --warning-soft: #fef3c7;
+  --warning-border: #fcd34d;
+  --neutral-soft: #f1f5f9;
+  --neutral-border: #cbd5e1;
+  --code-bg: #eef2f7;
+  --shadow: 0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
+  --shadow-strong: 0 4px 12px rgba(15,23,42,.08), 0 1px 3px rgba(15,23,42,.05);
+  --diff-add-bg: #e6ffec;
+  --diff-add-strong: #acf2bd;
+  --diff-del-bg: #ffeef0;
+  --diff-del-strong: #fdb8c0;
+  --diff-hdr-bg: #f0f0f0;
+  --case-pass-accent: #16a34a;
+  --case-fail-accent: #dc2626;
+  --case-pw-a-accent: #16a34a;
+  --case-pw-b-accent: #dc2626;
+  --case-pw-tie-accent: #d97706;
+  --case-pw-error-accent: #94a3b8;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #0b1220;
+  --surface: #0f1729;
+  --surface-2: #162033;
+  --surface-3: #1e293b;
+  --border: #1e2c44;
+  --border-strong: #334155;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-soft: #cbd5e1;
+  --accent: #60a5fa;
+  --accent-strong: #93c5fd;
+  --accent-soft: #1e3a8a;
+  --success: #4ade80;
+  --success-soft: #14532d;
+  --success-border: #166534;
+  --danger: #f87171;
+  --danger-soft: #7f1d1d;
+  --danger-border: #991b1b;
+  --warning: #fbbf24;
+  --warning-soft: #78350f;
+  --warning-border: #92400e;
+  --neutral-soft: #1e293b;
+  --neutral-border: #334155;
+  --code-bg: #1e293b;
+  --shadow: 0 1px 3px rgba(0,0,0,.4), 0 1px 2px rgba(0,0,0,.3);
+  --shadow-strong: 0 4px 14px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
+  --diff-add-bg: rgba(74,222,128,.08);
+  --diff-add-strong: rgba(74,222,128,.28);
+  --diff-del-bg: rgba(248,113,113,.08);
+  --diff-del-strong: rgba(248,113,113,.28);
+  --diff-hdr-bg: #1e293b;
+  --case-pass-accent: #4ade80;
+  --case-fail-accent: #f87171;
+  --case-pw-a-accent: #4ade80;
+  --case-pw-b-accent: #f87171;
+  --case-pw-tie-accent: #fbbf24;
+  --case-pw-error-accent: #64748b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 15px; line-height: 1.55; max-width: 1200px; margin: 0 auto; padding: 1.5em 1.5em 4em; color: var(--text); background: var(--bg); transition: background-color .15s ease, color .15s ease; }
+h1 { padding-bottom: 0; margin: 0 0 0.55em; font-size: 1.9em; letter-spacing: -0.015em; font-weight: 700; color: var(--accent-strong); }
+.report-header { margin: 0 0 1.6em; padding-bottom: 1.1em; border-bottom: 2px solid var(--border-strong); }
+.header-meta { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.meta-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px; padding: 5px 13px 5px 12px; font-size: 0.95em; color: var(--text); box-shadow: var(--shadow); line-height: 1.4; }
+.meta-chip .meta-label { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 700; }
+.meta-chip code { background: var(--code-bg); padding: 1px 7px; border-radius: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em; color: var(--text); }
+h2 { margin-top: 1.5em; letter-spacing: -0.005em; }
+table { border-collapse: separate; border-spacing: 0; width: 100%; margin: 1em 0; font-variant-numeric: tabular-nums; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+th, td { border-bottom: 1px solid var(--border); padding: 9px 12px; text-align: left; }
+tr:last-child td { border-bottom: none; }
+th { background: var(--surface-2); font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; }
+tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface-2) 50%, transparent); }
+tbody tr:hover td { background: var(--accent-soft); }
+.pass, .fail, .warn, .skip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.85em; font-weight: 600; line-height: 1.4; border: 1px solid transparent; }
+.pass { color: var(--success); background: var(--success-soft); border-color: var(--success-border); }
+.fail { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-border); }
+.warn { color: var(--warning); background: var(--warning-soft); border-color: var(--warning-border); }
+.skip { color: var(--text-muted); background: var(--neutral-soft); border-color: var(--neutral-border); font-weight: 500; }
+.metric-row td:last-child { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.judge-type { font-size: 0.85em; color: var(--text-muted); }
+.subsection-heading { margin-top: 1.4em; font-size: 0.95em; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.model-heading { margin: 1.2em 0 0.4em; font-size: 0.92em; font-weight: 600; color: var(--text-soft); }
+.model-heading code { background: var(--code-bg); padding: 2px 8px; border-radius: 4px; font-size: 0.95em; font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--text); }
+.config-table { table-layout: fixed; }
+.config-table th:first-child, .config-table td:first-child { width: 22%; }
+.config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.9em 1.6em; margin: 0.4em 0 0.8em; padding: 0; }
+.kv { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.kv dt { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; margin: 0; }
+.kv dd { margin: 0; font-weight: 500; font-variant-numeric: tabular-nums; word-break: break-word; line-height: 1.35; color: var(--text); }
+.kv dd.bl { color: var(--text-muted); font-size: 0.85em; font-weight: 400; }
+.kv dd.bl::before { content: "vs "; opacity: 0.7; }
+.kv dd.bl .delta { font-weight: 600; font-size: 0.95em; padding-left: 4px; }
+details.eval-params { margin: 1.2em 0 0; padding: 0; }
+details.eval-params > summary { cursor: pointer; padding: 6px 0; list-style: none; display: flex; align-items: center; gap: 8px; user-select: none; min-width: 0; }
+details.eval-params > summary::-webkit-details-marker { display: none; }
+details.eval-params > summary::before { content: "▸"; font-size: 0.9em; transition: transform .15s ease; display: inline-block; color: var(--text-muted); flex-shrink: 0; }
+details.eval-params[open] > summary::before { transform: rotate(90deg); }
+details.eval-params > summary:hover .eval-params-label { color: var(--accent); }
+.eval-params-label { font-size: 0.95em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; flex-shrink: 0; }
+.eval-params-preview { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em; color: var(--text-soft); padding-left: 8px; border-left: 1px solid var(--border-strong); margin-left: 2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+details.eval-params[open] .eval-params-preview { display: none; }
+details.eval-params > .config-grid { margin-top: 0.5em; }
+details.eval-params > .run-command { margin: 0.6em 0 0; }
+.run-command { margin: 0.4em 0 1em; }
+.run-command-label { display: block; font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px; }
+.run-command pre { margin: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; overflow-x: auto; font-size: 0.85em; line-height: 1.4; }
+.run-command code { background: transparent; padding: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--text); white-space: pre; }
+.usage-table th code { background: var(--code-bg); padding: 2px 7px; border-radius: 4px; font-size: 0.95em; font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 500; }
+.usage-table td { font-variant-numeric: tabular-nums; }
+.usage-table .cur-val { display: block; font-weight: 500; }
+.usage-table .bl-val { display: block; font-size: 0.82em; color: var(--text-muted); margin-top: 1px; }
+.usage-table .bl-val::before { content: "vs "; opacity: 0.7; }
+.usage-table .delta { font-weight: 600; font-size: 0.9em; padding-left: 4px; }
+.delta-good { color: var(--success); }
+.delta-bad { color: var(--danger); }
+.delta-flat { color: var(--text-muted); font-weight: 500; }
+.baseline-row td { background: var(--surface-2); font-style: italic; color: var(--text-muted); }
+.rationale { font-size: 0.88em; color: var(--text-soft); }
+.rationale p { margin: 0 0 0.5em; line-height: 1.5; }
+.rationale p:last-child { margin-bottom: 0; }
+.rationale ul, .rationale ol { margin: 0.3em 0 0.5em 1.2em; padding: 0; }
+.rationale li { margin: 0.2em 0; }
+.rationale code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.rationale strong { color: var(--text); }
+details.case { margin: 1em 0; border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px; padding: 1em 1.2em; background: var(--surface); box-shadow: var(--shadow); }
+details.case.case-pass { border-left-color: var(--case-pass-accent); }
+details.case.case-fail { border-left-color: var(--case-fail-accent); }
+details.case.case-pw-a { border-left-color: var(--case-pw-a-accent); }
+details.case.case-pw-b { border-left-color: var(--case-pw-b-accent); }
+details.case.case-pw-tie { border-left-color: var(--case-pw-tie-accent); }
+details.case.case-pw-error { border-left-color: var(--case-pw-error-accent); }
+details.case > summary { cursor: pointer; font-weight: 600; padding: 0.2em 0; font-size: 1.02em; list-style: none; display: flex; align-items: center; gap: 0.6em; }
+details.case > summary::-webkit-details-marker { display: none; }
+details.case > summary::before { content: "▸"; color: var(--text-muted); transition: transform .15s ease; display: inline-block; }
+details.case[open] > summary::before { transform: rotate(90deg); }
+details.case > summary:hover { color: var(--accent); }
+.info-box { background: var(--accent-soft); border: 1px solid var(--border); border-radius: 6px; padding: 0.8em 1em; margin: 0.6em 0; font-size: 0.9em; }
+.feedback-box { background: var(--warning-soft); border: 1px solid var(--warning-border); border-radius: 6px; padding: 0.8em 1em; margin: 0.6em 0; font-size: 0.9em; color: var(--text); }
+.file-badge { display: inline-block; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.82em; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 5px; padding: 3px 10px; margin: 1em 0 0.5em 0; color: var(--text-soft); }
+.pw-badge { display: inline-block; font-size: 0.78em; font-weight: 700; padding: 2px 9px; border-radius: 999px; margin-left: 8px; border: 1px solid transparent; letter-spacing: 0.04em; }
+.pw-win { background: var(--success-soft); color: var(--success); border-color: var(--success-border); }
+.pw-loss { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-border); }
+.pw-tie { background: var(--warning-soft); color: var(--warning); border-color: var(--warning-border); }
+.pw-error { background: var(--neutral-soft); color: var(--text-muted); border-color: var(--neutral-border); }
+.diff-table { width: 100%; border-collapse: collapse; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.82em; table-layout: fixed; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.diff-table td { padding: 1px 6px; vertical-align: top; white-space: pre-wrap; word-wrap: break-word; border: 1px solid var(--border); }
+.diff-table .ln { width: 35px; min-width: 35px; color: var(--text-muted); text-align: right; background: var(--surface-2); user-select: none; white-space: nowrap; }
+.diff-table .left, .diff-table .right { width: calc(50% - 35px); background: var(--surface); }
+.diff-table .sep { width: 1px; padding: 0; background: var(--border-strong); }
+.diff-table tr.mod .left { background: var(--diff-del-bg); }
+.diff-table tr.mod .right { background: var(--diff-add-bg); }
+.diff-table tr.add .right { background: var(--diff-add-bg); }
+.diff-table tr.add .left { background: var(--surface-2); }
+.diff-table tr.del .left { background: var(--diff-del-bg); }
+.diff-table tr.del .right { background: var(--surface-2); }
+.diff-table tr.hdr td { background: var(--diff-hdr-bg); color: var(--text-muted); font-weight: 600; }
+.diff-table .wdel { background: var(--diff-del-strong); border-radius: 2px; padding: 0 2px; }
+.diff-table .wadd { background: var(--diff-add-strong); border-radius: 2px; padding: 0 2px; }
+pre.output { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 0.9em 1em; font-size: 0.88em; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; color: var(--text); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.html-preview { width: 100%; height: 80vh; max-height: 2000px; border: 1px solid var(--border-strong); border-radius: 6px; margin: 0.5em 0; background: #fff; color-scheme: light; }
+.section, .analysis { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 1.3em 1.6em 1.4em; margin: 1.5em 0; box-shadow: var(--shadow); }
+.section > h2:first-child, h2.section-heading { margin: 0 0 0.7em; padding: 0; border: none; font-size: 1.3em; color: var(--accent-strong); letter-spacing: -0.005em; }
+h2.section-heading { margin: 1.8em 0 0.8em; }
+.section-intro { color: var(--text-muted); margin: 0 0 1em; font-size: 0.92em; }
+.section > table:last-child, .section > details:last-child { margin-bottom: 0; }
+.analysis { border-left-width: 5px; margin-bottom: 2em; box-shadow: var(--shadow-strong); }
+.analysis-banner { display: flex; align-items: center; gap: 0.7em; margin-bottom: 0.3em; }
+.analysis-banner h2 { margin: 0; padding: 0; border: none; font-size: 1.4em; color: var(--accent-strong); letter-spacing: -0.005em; }
+.analysis-body h2 { margin-top: 1.6em; padding-bottom: 0.35em; font-size: 1.1em; color: var(--accent-strong); border-bottom: 1px solid var(--border); }
+.analysis-body h2:first-of-type { margin-top: 0; font-size: 1.2em; border-bottom-width: 2px; padding-bottom: 0.4em; border-bottom-color: var(--accent); }
+.analysis-body h3 { margin-top: 1em; color: var(--text-soft); font-size: 1em; }
+.analysis-body li { margin: 0.3em 0; line-height: 1.55; }
+.analysis-body p { line-height: 1.6; }
+.analysis-body code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; font-size: 0.88em; font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--text); }
+.analysis-body table { font-size: 0.92em; }
+.analysis-body hr { border: none; border-top: 1px dashed var(--border-strong); margin: 1.4em 0; }
+.section-intro code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+#theme-toggle { position: fixed; top: 16px; right: 16px; z-index: 1000; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: 999px; width: 38px; height: 38px; padding: 0; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow); transition: background-color .15s ease, transform .15s ease, border-color .15s ease; }
+#theme-toggle:hover { background: var(--surface-2); border-color: var(--accent); transform: scale(1.05); }
+#theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media print {
+  :root { color-scheme: light; --bg: #fff; --surface: #fff; --text: #000; --text-muted: #444; }
+  #theme-toggle { display: none; }
+  .section, .analysis, details.case { box-shadow: none; break-inside: avoid; }
+}
+"""
+
+THEME_SCRIPT = """
+(function () {
+  try {
+    var stored = localStorage.getItem('eval-report-theme');
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var theme = stored || (prefersDark ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+"""
+
+TOGGLE_SCRIPT = """
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  function paint() {
+    var t = document.documentElement.getAttribute('data-theme') || 'light';
+    btn.textContent = t === 'dark' ? '\\u2600' : '\\u263E';
+    btn.setAttribute('aria-label', t === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+    btn.title = btn.getAttribute('aria-label');
+  }
+  btn.addEventListener('click', function () {
+    var current = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('eval-report-theme', next); } catch (e) {}
+    paint();
+  });
+  paint();
+})();
 """
 
 
-def _render_header(config, run_id, run_result):
-    name = config.get("name", "Eval")
+def _render_header(config, run_id, run_result, baseline_id=None):
+    title = "Skill Eval Report"
     skill = config.get("skill", "")
     date = run_result.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"))
-    title = f"{name}" if name else "Eval Report"
-    subtitle = f"Skill: {skill} | Run: {run_id}" if skill else f"Run: {run_id}"
-    return f"<h1>{_esc(title)}</h1>\n<p>{_esc(subtitle)} | {_esc(str(date)[:19])}</p>\n"
+
+    chips = []
+    if skill:
+        chips.append(
+            f'<span class="meta-chip"><span class="meta-label">Skill</span>'
+            f'<code>{_esc(skill)}</code></span>'
+        )
+    chips.append(
+        f'<span class="meta-chip"><span class="meta-label">Run</span>'
+        f'<code>{_esc(run_id)}</code></span>'
+    )
+    if baseline_id:
+        chips.append(
+            f'<span class="meta-chip meta-baseline"><span class="meta-label">Baseline</span>'
+            f'<code>{_esc(baseline_id)}</code></span>'
+        )
+    chips.append(
+        f'<span class="meta-chip"><span class="meta-label">Date</span>'
+        f'{_esc(str(date)[:19])}</span>'
+    )
+
+    return (
+        '<header class="report-header">\n'
+        f'  <h1>{_esc(title)}</h1>\n'
+        f'  <div class="header-meta">{"".join(chips)}</div>\n'
+        '</header>\n'
+    )
 
 
 def _render_run_config(run_result, baseline_result=None):
@@ -245,57 +469,276 @@ def _render_run_config(run_result, baseline_result=None):
         ("Turns", "num_turns"),
         ("Exit Code", "exit_code"),
     ]
+    # Numeric fields where a baseline delta is meaningful (lower is better)
+    numeric_lower_better = {"duration_s", "cost_usd", "num_turns"}
 
-    html = "<h2>Run Configuration</h2>\n<table>\n"
-    html += f"<tr><th></th><th>Current Run</th>{'<th>Baseline</th>' if has_bl else ''}</tr>\n"
+    def _fmt(key, val):
+        if val is None or val == "":
+            return "—"
+        if key == "duration_s":
+            try:
+                v = float(val)
+                return f"{v / 60:.0f} min" if v >= 60 else f"{v:.0f}s"
+            except (TypeError, ValueError):
+                return str(val)
+        if key == "cost_usd":
+            try:
+                return f"${float(val):.2f}"
+            except (TypeError, ValueError):
+                return str(val)
+        if key == "num_turns" and isinstance(val, int):
+            return f"{val:,}"
+        return str(val)
 
+    def _scalar_delta(key, cur_raw, bl_raw):
+        """Delta tuple (arrow, str, css_class) for numeric fields, else None."""
+        if key not in numeric_lower_better:
+            return None
+        if not isinstance(cur_raw, (int, float)) or not isinstance(bl_raw, (int, float)):
+            return None
+        if bl_raw == 0:
+            return None
+        diff = cur_raw - bl_raw
+        if diff == 0:
+            return ("→", "0%", "delta-flat")
+        pct = (diff / bl_raw) * 100
+        arrow = "↑" if diff > 0 else "↓"
+        sign = "+" if diff > 0 else ""
+        return (arrow, f"{sign}{pct:.1f}%",
+                "delta-good" if diff < 0 else "delta-bad")
+
+    html = '<h2>Run Configuration</h2>\n<dl class="config-grid">\n'
     for label, key in fields:
-        val = run_result.get(key, "")
-        if key == "duration_s" and val:
-            val = f"{val:.0f}s"
-        elif key == "cost_usd" and val:
-            val = f"${val:.2f}"
-        bl_val = ""
+        cur_raw = run_result.get(key)
+        cur = _fmt(key, cur_raw)
+        html += '<div class="kv">'
+        html += f'<dt>{label}</dt>'
+        html += f'<dd>{_esc(cur)}</dd>'
         if has_bl:
-            bl_val = baseline_result.get(key, "")
-            if key == "duration_s" and bl_val:
-                bl_val = f"{bl_val:.0f}s"
-            elif key == "cost_usd" and bl_val:
-                bl_val = f"${bl_val:.2f}"
-        html += f"<tr><th>{label}</th><td>{_esc(str(val))}</td>"
-        if has_bl:
-            html += f"<td>{_esc(str(bl_val))}</td>"
-        html += "</tr>\n"
+            bl_raw = baseline_result.get(key)
+            bl = _fmt(key, bl_raw)
+            if bl != cur:
+                d = _scalar_delta(key, cur_raw, bl_raw)
+                delta_html = (f' <span class="delta {d[2]}">{d[0]} {d[1]}</span>'
+                              if d else "")
+                html += f'<dd class="bl">{_esc(bl)}{delta_html}</dd>'
+        html += '</div>\n'
+    html += "</dl>\n"
+    html += _render_token_usage(run_result, baseline_result)
+    html += _render_eval_params(run_result)
+    return html
 
-    # Token usage — show input/output separately from cache with hit rate
-    tokens = run_result.get("token_usage", {})
-    if tokens:
-        t_str = f"in: {tokens.get('input', 0):,} | out: {tokens.get('output', 0):,}"
-        cache_r = tokens.get("cache_read", 0)
-        cache_w = tokens.get("cache_create", 0)
-        if cache_r or cache_w:
-            total_in = tokens.get("input", 0) + cache_r + cache_w
-            hit_rate = cache_r / total_in if total_in else 0
-            t_str += f" | cache read: {cache_r:,} | cache write: {cache_w:,}"
-            t_str += f" ({hit_rate:.0%} hit)"
-        bl_t_str = ""
-        if has_bl:
-            bl_tokens = baseline_result.get("token_usage", {})
-            if bl_tokens:
-                bl_t_str = f"in: {bl_tokens.get('input', 0):,} | out: {bl_tokens.get('output', 0):,}"
-                bl_cr = bl_tokens.get("cache_read", 0)
-                bl_cw = bl_tokens.get("cache_create", 0)
-                if bl_cr or bl_cw:
-                    bl_total_in = bl_tokens.get("input", 0) + bl_cr + bl_cw
-                    bl_hit = bl_cr / bl_total_in if bl_total_in else 0
-                    bl_t_str += f" | cache read: {bl_cr:,} | cache write: {bl_cw:,}"
-                    bl_t_str += f" ({bl_hit:.0%} hit)"
-        html += f"<tr><th>Tokens</th><td>{t_str}</td>"
-        if has_bl:
-            html += f"<td>{bl_t_str}</td>"
-        html += "</tr>\n"
 
-    html += "</table>\n"
+def _render_eval_params(run_result):
+    """Render the user-facing eval parameters that defined the run."""
+    params = run_result.get("eval_params") or {}
+    if not params:
+        return ""
+
+    # Short params shown as kv chips
+    short_fields = [
+        ("Execution Mode", "execution_mode"),
+        ("Max Budget", "max_budget_usd"),
+        ("Timeout", "timeout_s"),
+        ("Effort", "effort"),
+        ("MLflow Experiment", "mlflow_experiment"),
+    ]
+
+    def _fmt(key, val):
+        if val is None or val == "":
+            return None
+        if key == "max_budget_usd":
+            try:
+                return f"${float(val):.0f}"
+            except (TypeError, ValueError):
+                return str(val)
+        if key == "timeout_s":
+            try:
+                v = int(val)
+                return f"{v // 60} min" if v >= 60 else f"{v}s"
+            except (TypeError, ValueError):
+                return str(val)
+        return str(val)
+
+    chips = []
+    for label, key in short_fields:
+        formatted = _fmt(key, params.get(key))
+        if formatted is None:
+            continue
+        chips.append(
+            '<div class="kv">'
+            f'<dt>{label}</dt>'
+            f'<dd>{_esc(formatted)}</dd>'
+            '</div>'
+        )
+
+    body = ""
+    if chips:
+        body += '<dl class="config-grid">\n' + "\n".join(chips) + '\n</dl>\n'
+
+    skill_args = params.get("skill_args")
+    if skill_args:
+        body += (
+            '<div class="run-command">'
+            '<span class="run-command-label">Skill Args</span>'
+            f'<pre><code>/{_esc(params.get("skill", "skill"))} {_esc(skill_args)}</code></pre>'
+            '</div>\n'
+        )
+
+    if not body:
+        return ""
+
+    # One-line preview shown alongside the summary when collapsed.
+    # Prefer skill args (the dataset/invocation), fall back to a compact
+    # comma-joined view of the short params.
+    preview_text = ""
+    if skill_args:
+        preview_text = f'/{params.get("skill", "skill")} {skill_args}'
+    else:
+        bits = [_fmt(k, params.get(k))
+                for _, k in short_fields if _fmt(k, params.get(k))]
+        preview_text = " · ".join(bits)
+
+    preview_html = (
+        f'<span class="eval-params-preview">{_esc(preview_text)}</span>'
+        if preview_text else ""
+    )
+
+    return (
+        '<details class="eval-params">\n'
+        f'<summary><span class="eval-params-label">Parameters</span>{preview_html}</summary>\n'
+        f'{body}'
+        '</details>\n'
+    )
+
+
+def _render_token_usage(run_result, baseline_result=None):
+    """Render token usage: a Total mini-table aggregating all models, plus
+    one mini-table per individual model when per_model_usage is available.
+    All tables share the .config-table layout for visual alignment."""
+    tokens = run_result.get("token_usage") or {}
+    bl_tokens = (baseline_result or {}).get("token_usage") or {}
+    per_model = run_result.get("per_model_usage") or {}
+    bl_per_model = (baseline_result or {}).get("per_model_usage") or {}
+
+    if not tokens and not bl_tokens and not per_model and not bl_per_model:
+        return ""
+
+    has_bl = bool(bl_tokens) or bool(bl_per_model)
+
+    def _fmt(usage, key):
+        if not usage:
+            return "—"
+        if key == "hit":
+            inp = usage.get("input", 0) or 0
+            cr = usage.get("cache_read", 0) or 0
+            cw = usage.get("cache_create", 0) or 0
+            total_in = inp + cr + cw
+            return f"{cr / total_in:.1%}" if total_in else "—"
+        v = usage.get(key, 0) or 0
+        if key == "cost_usd":
+            return f"${v:.2f}"
+        return f"{v:,}"
+
+    # token_usage doesn't include cost_usd; pull it from run_result for the total
+    def _total(usage_dict, run_data):
+        if not usage_dict and not run_data:
+            return None
+        merged = dict(usage_dict or {})
+        if run_data and "cost_usd" in run_data:
+            merged["cost_usd"] = run_data.get("cost_usd")
+        return merged
+
+    metrics = [
+        ("Input", "input"),
+        ("Output", "output"),
+        ("Cache read", "cache_read"),
+        ("Cache write", "cache_create"),
+        ("Hit", "hit"),
+        ("Cost", "cost_usd"),
+    ]
+    # higher-is-better metrics; everything else assumed lower-is-better
+    higher_better = {"cache_read", "hit"}
+
+    def _hit_rate(u):
+        if not u:
+            return None
+        inp = u.get("input", 0) or 0
+        cr = u.get("cache_read", 0) or 0
+        cw = u.get("cache_create", 0) or 0
+        t = inp + cr + cw
+        return cr / t if t else None
+
+    def _delta(cur, bl, key):
+        """Return (arrow, delta_str, css_class) or (None, None, None)."""
+        if not cur or not bl:
+            return (None, None, None)
+        if key == "hit":
+            cur_v = _hit_rate(cur)
+            bl_v = _hit_rate(bl)
+            if cur_v is None or bl_v is None:
+                return (None, None, None)
+            diff = cur_v - bl_v
+            if abs(diff) < 0.0005:
+                return ("→", "0pp", "delta-flat")
+            arrow = "↑" if diff > 0 else "↓"
+            sign = "+" if diff > 0 else ""
+            return (arrow, f"{sign}{diff * 100:.1f}pp",
+                    "delta-good" if (diff > 0) == (key in higher_better) else "delta-bad")
+        cur_v = cur.get(key, 0) or 0
+        bl_v = bl.get(key, 0) or 0
+        if bl_v == 0:
+            return (None, None, None)
+        diff = cur_v - bl_v
+        if diff == 0:
+            return ("→", "0%", "delta-flat")
+        pct = (diff / bl_v) * 100
+        arrow = "↑" if diff > 0 else "↓"
+        sign = "+" if diff > 0 else ""
+        return (arrow, f"{sign}{pct:.1f}%",
+                "delta-good" if (diff > 0) == (key in higher_better) else "delta-bad")
+
+    cur_total = _total(tokens, run_result)
+    bl_total = _total(bl_tokens, baseline_result)
+    models = sorted(set(per_model) | set(bl_per_model))
+    show_total = bool(cur_total or bl_total) and len(models) != 1
+
+    # Build column list: optional Total, then each model
+    columns = []
+    if show_total:
+        columns.append(("Total", cur_total, bl_total))
+    for m in models:
+        columns.append((m, per_model.get(m), bl_per_model.get(m)))
+
+    if not columns:
+        return ""
+
+    html = '<h3 class="subsection-heading">Token Usage</h3>\n'
+    html += '<table class="usage-table">\n'
+    html += '<tr><th></th>'
+    for label, _, _ in columns:
+        if label == "Total":
+            html += f'<th>{label}</th>'
+        else:
+            html += f'<th><code>{_esc(label)}</code></th>'
+    html += '</tr>\n'
+
+    for mlabel, mkey in metrics:
+        html += f'<tr><th>{mlabel}</th>'
+        for _, cur, bl in columns:
+            cur_v = _fmt(cur, mkey)
+            html += '<td>'
+            html += f'<span class="cur-val">{cur_v}</span>'
+            if has_bl:
+                bl_v = _fmt(bl, mkey)
+                if bl_v != cur_v:
+                    arrow, delta_str, dcls = _delta(cur, bl, mkey)
+                    delta_html = (f' <span class="delta {dcls}">{arrow} {delta_str}</span>'
+                                  if delta_str else "")
+                    html += f'<span class="bl-val">{bl_v}{delta_html}</span>'
+            html += '</td>'
+        html += '</tr>\n'
+    html += '</table>\n'
     return html
 
 
@@ -373,12 +816,12 @@ def _render_scoring_summary(summary, config, baseline_summary=None):
         jtype, jmodel = judge_info.get(judge_name, ("—", "—"))
         type_label = jtype if jtype == "check" else f'{jtype} ({jmodel.split("@")[0]})'
         html += f'<tr class="metric-row"><td>{_esc(judge_name)}</td>'
-        html += f'<td style="font-size:0.85em">{_esc(type_label)}</td>'
+        html += f'<td class="judge-type">{_esc(type_label)}</td>'
         html += f"<td>{metric_name}</td><td>{metric_val}</td>"
         if has_bl:
             html += f"<td>{bl_val}</td>"
         html += f'<td>{thresh_str}</td>'
-        html += f'<td class="{status_cls}">{status_label}</td></tr>\n'
+        html += f'<td><span class="{status_cls}">{status_label}</span></td></tr>\n'
 
     # Pairwise summary row (if available)
     pw = summary.get("pairwise")
@@ -400,11 +843,11 @@ def _render_scoring_summary(summary, config, baseline_summary=None):
         pw_jc = next((j for j in config.get("judges", []) if j.get("name") == "pairwise"), {})
         pw_model = pw_jc.get("model") or default_model
         html += (f'<tr class="metric-row"><td>pairwise</td>'
-                 f'<td style="font-size:0.85em">llm ({pw_model.split("@")[0]})</td>'
+                 f'<td class="judge-type">llm ({pw_model.split("@")[0]})</td>'
                  f'<td>comparison</td><td>{pw_val}</td>')
         if has_bl:
             html += "<td>—</td>"
-        html += f'<td>—</td><td class="{pw_status_cls}">{pw_status}</td></tr>\n'
+        html += f'<td>—</td><td><span class="{pw_status_cls}">{pw_status}</span></td></tr>\n'
 
     html += "</table>\n"
     return html
@@ -470,8 +913,104 @@ def _render_pairwise(summary):
     return html
 
 
-def _render_analysis(run_dir):
-    """Render the agent's analysis (key findings + recommendations) if saved."""
+def _parse_analysis_frontmatter(content: str):
+    """Split optional YAML frontmatter from the analysis body.
+
+    Returns (meta_dict, body_markdown). When the file has no frontmatter,
+    meta_dict is empty and body_markdown is the unchanged content.
+    """
+    if not content.startswith("---"):
+        return {}, content
+    lines = content.splitlines()
+    # Find the closing '---' line (must be on its own line, after line 0)
+    end_idx = None
+    for idx in range(1, len(lines)):
+        if lines[idx].strip() == "---":
+            end_idx = idx
+            break
+    if end_idx is None:
+        return {}, content
+    raw = "\n".join(lines[1:end_idx])
+    try:
+        meta = yaml.safe_load(raw) or {}
+        if not isinstance(meta, dict):
+            meta = {}
+    except yaml.YAMLError:
+        meta = {}
+    body = "\n".join(lines[end_idx + 1:]).lstrip("\n")
+    return meta, body
+
+
+def _build_analysis_subtitle(meta, summary, run_result, baseline_summary):
+    """Construct a dynamic subtitle paragraph for the analysis section.
+
+    Pulls the analysis author from the frontmatter, run shape from summary,
+    and execution metadata from run_result. Falls back gracefully when fields
+    are missing.
+    """
+    author_agent = (meta or {}).get("agent")
+    author_model = (meta or {}).get("model")
+    author_date = (meta or {}).get("date")
+    if author_agent and author_model:
+        author_html = (f"<strong>{_esc(str(author_agent))}</strong> "
+                       f"(<code>{_esc(str(author_model))}</code>)")
+    elif author_model:
+        author_html = f"<strong><code>{_esc(str(author_model))}</code></strong>"
+    elif author_agent:
+        author_html = f"<strong>{_esc(str(author_agent))}</strong>"
+    else:
+        author_html = "<strong>Claude Code</strong>"
+
+    date_html = (f" on <code>{_esc(str(author_date))}</code>"
+                 if author_date else "")
+
+    judge_count = len((summary or {}).get("judges") or {})
+    case_count = len((summary or {}).get("per_case") or {})
+
+    scope_bits = []
+    if judge_count:
+        scope_bits.append(f"{judge_count} judge score{'s' if judge_count != 1 else ''}")
+    if case_count:
+        scope_bits.append(f"{case_count} case{'s' if case_count != 1 else ''}")
+    scope = " across ".join(scope_bits) if scope_bits else "this run's results"
+
+    rr = run_result or {}
+    metric_parts = []
+    dur = rr.get("duration_s")
+    if isinstance(dur, (int, float)) and dur > 0:
+        metric_parts.append(f"{dur / 60:.0f} min" if dur >= 60 else f"{dur:.0f}s")
+    cost = rr.get("cost_usd")
+    if isinstance(cost, (int, float)) and cost > 0:
+        metric_parts.append(f"${cost:.2f}")
+    turns = rr.get("num_turns")
+    if isinstance(turns, int) and turns > 0:
+        metric_parts.append(f"{turns:,} turns")
+    exit_code = rr.get("exit_code")
+    if exit_code is not None:
+        metric_parts.append(f"exit {exit_code}")
+    metrics_html = f" ({', '.join(metric_parts)})" if metric_parts else ""
+
+    baseline_html = ""
+    bl_run = (baseline_summary or {}).get("run_id")
+    if bl_run:
+        baseline_html = f" Baseline: <code>{_esc(str(bl_run))}</code>."
+
+    return (
+        f"Generated by {author_html}{date_html} from {scope}, "
+        f"plus execution metadata{metrics_html}.{baseline_html} "
+        "Recommendation leads; failure patterns, root causes, and regressions "
+        "follow as supporting evidence."
+    )
+
+
+def _render_analysis(run_dir, summary=None, run_result=None, baseline_summary=None):
+    """Render the agent's analysis (recommendation + supporting findings) if saved.
+
+    The analysis is wrapped in a visually distinct callout and placed near the
+    top of the report so the agent's recommendation is highly visible. The
+    subtitle is built dynamically from optional YAML frontmatter (author model,
+    date) plus the run's summary and run_result.
+    """
     analysis_path = run_dir / "analysis.md"
     if not analysis_path.exists():
         return ""
@@ -480,7 +1019,74 @@ def _render_analysis(run_dir):
     if not content:
         return ""
 
-    return _md_to_html(content)
+    meta, body_md = _parse_analysis_frontmatter(content)
+    subtitle = _build_analysis_subtitle(meta, summary, run_result, baseline_summary)
+    body = _md_to_html(body_md)
+    return (
+        '<section class="analysis">\n'
+        '<div class="analysis-banner"><h2>Analysis</h2></div>\n'
+        f'<p class="section-intro">{subtitle}</p>\n'
+        f'<div class="analysis-body">\n{body}\n</div>\n'
+        '</section>\n'
+    )
+
+
+def _normalize_escapes(text: str) -> str:
+    """Convert JSON-style escape sequences (literal \\n, \\t) sometimes
+    emitted by judge LLMs inside their rationale into the real characters.
+    Only handles the safe subset; ignores \\x / \\u to avoid surprises."""
+    if not text or "\\" not in text:
+        return text
+    return (text.replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t"))
+
+
+import re as _re
+from urllib.parse import urlsplit as _urlsplit
+
+_SAFE_LINK_SCHEMES = {"http", "https", "mailto"}
+
+
+def _safe_href(raw: str) -> str | None:
+    """Return a safe href value or None if the URL must be rejected.
+
+    Defends against XSS via judge rationales / analysis.md content like
+    `[click](javascript:alert(1))` or attribute-injection via stray quotes.
+    Allows http/https/mailto URLs and relative paths/anchors only.
+
+    `raw` is expected to already be HTML-escaped (since `_md_inline` escapes
+    the full text before running the link regex), so we do not re-escape.
+    """
+    href = raw.strip()
+    if not href:
+        return None
+    parsed = _urlsplit(href)
+    if parsed.scheme:
+        if parsed.scheme.lower() not in _SAFE_LINK_SCHEMES:
+            return None
+    elif not href.startswith(("/", "#", "./", "../")):
+        return None
+    return href
+
+
+def _md_inline(text: str) -> str:
+    """Apply inline markdown formatting (bold, italic, code, links) to text.
+    Always HTML-escapes first."""
+    text = _esc(text)
+    text = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+    text = _re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
+    text = _re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+
+    def _link_sub(match):
+        label = match.group(1)
+        href = _safe_href(match.group(2))
+        if href is None:
+            return label
+        return f'<a href="{href}" rel="noopener noreferrer">{label}</a>'
+
+    text = _re.sub(r'\[([^\]]+)\]\(([^)]+)\)', _link_sub, text)
+    return text
 
 
 def _md_to_html(md_text):
@@ -497,14 +1103,7 @@ def _md_to_html(md_text):
         while list_stack:
             out.append(f"</{list_stack.pop()}>")
 
-    def _inline(text):
-        """Apply inline formatting: bold, italic, code, links."""
-        text = _esc(text)
-        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-        text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
-        text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
-        text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
-        return text
+    _inline = _md_inline
 
     while i < len(lines):
         line = lines[i]
@@ -573,6 +1172,13 @@ def _md_to_html(md_text):
             i += 1
             continue
 
+        # Horizontal rule
+        if stripped in ("---", "***", "___"):
+            _close_lists()
+            out.append("<hr>")
+            i += 1
+            continue
+
         # Blank line
         if not stripped:
             _close_lists()
@@ -608,20 +1214,23 @@ def _md_table_to_html(table_lines):
 
     html = "<table>\n<tr>"
     for h in headers:
-        html += f"<th>{_esc(h)}</th>"
+        html += f"<th>{_md_inline(h)}</th>"
     html += "</tr>\n"
 
     for row_line in table_lines[data_start:]:
         cells = _parse_row(row_line)
         html += "<tr>"
         for c in cells:
-            # Color-code PASS/FAIL cells
-            cls = ""
-            if c.strip() == "PASS":
-                cls = ' class="pass"'
-            elif c.strip() == "FAIL":
-                cls = ' class="fail"'
-            html += f"<td{cls}>{_esc(c)}</td>"
+            # Color-code PASS/FAIL cells: wrap content in a badge span so the
+            # `display: inline-block` badge style does not break <td> layout.
+            stripped = c.strip()
+            inner = _md_inline(c)
+            if stripped == "PASS":
+                html += f'<td><span class="pass">{inner}</span></td>'
+            elif stripped == "FAIL":
+                html += f'<td><span class="fail">{inner}</span></td>'
+            else:
+                html += f"<td>{inner}</td>"
         html += "</tr>\n"
 
     html += "</table>"
@@ -650,7 +1259,7 @@ def _render_shared_outputs(run_dir, config):
         return ""
 
     html = "<h2>Shared Outputs</h2>\n"
-    html += '<p class="skip">These files are shared across all cases (not repeated per-case below).</p>\n'
+    html += '<p class="section-intro">These files are shared across all cases (not repeated per-case below).</p>\n'
     for out_path in sorted(shared_paths):
         shared_entry = first_case / out_path
         if not shared_entry.exists():
@@ -699,10 +1308,10 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
     for pc in pw.get("per_case", []):
         pw_by_case[pc.get("case_id", "")] = pc.get("winner", "error")
 
-    html = "<h2>Per-Case Details</h2>\n"
+    html = '<h2 class="section-heading">Per-Case Details</h2>\n'
     if baseline_dir:
-        html += (f"<p>Comparing <strong>{run_dir.name}</strong> vs "
-                 f"<strong>{baseline_dir.name}</strong></p>\n")
+        html += (f'<p class="section-intro">Comparing <strong>{run_dir.name}</strong> vs '
+                 f'<strong>{baseline_dir.name}</strong></p>\n')
 
     for case_id in sorted(per_case.keys()):
         case_results = per_case[case_id]
@@ -738,18 +1347,19 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                     passed += 1  # no threshold defined, count as pass
         status = "pass" if failed == 0 else "fail"
 
-        # Pairwise badge or pass/fail background
+        # Pairwise badge or pass/fail accent — applied as a left-border class
         pw_badge = ""
         if case_id in pw_by_case:
             pw_winner = pw_by_case[case_id]
             pw_badge = f" {_pairwise_badge(pw_winner)}"
-            pw_colors = {"A": "#d4edda", "B": "#f8d7da", "tie": "#fff3cd", "error": "#fafafa"}
-            bg = pw_colors.get(pw_winner, "")
+            pw_class_map = {"A": "case-pw-a", "B": "case-pw-b",
+                            "tie": "case-pw-tie", "error": "case-pw-error"}
+            accent_class = pw_class_map.get(pw_winner, "case-pw-error")
         else:
-            bg = "#d4edda" if status == "pass" else "#f8d7da"
+            accent_class = f"case-{status}"
 
-        html += (f'<details open class="case" style="background:{bg}"><summary>'
-                 f'<span class="{status}">{label}</span> '
+        html += (f'<details open class="case {accent_class}"><summary>'
+                 f'<span class="{status}">{_esc(str(label))}</span> '
                  f'<span class="skip">({passed}/{total} pass)</span>'
                  f'{pw_badge}</summary>\n')
 
@@ -759,7 +1369,7 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
             if not isinstance(jresult, dict):
                 continue
             val = jresult.get("value")
-            rat = str(jresult.get("rationale", ""))[:300]
+            rat = str(jresult.get("rationale", ""))
             err = jresult.get("error", "")
 
             if val is True:
@@ -779,8 +1389,9 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
             if err:
                 rat = f"ERROR: {err}"
 
+            rat_html = _md_to_html(_normalize_escapes(rat)) if rat else ""
             html += (f'<tr><td>{_esc(jname)}</td><td>{val_html}</td>'
-                     f'<td style="font-size:0.85em">{_esc(rat)}</td></tr>\n')
+                     f'<td class="rationale">{rat_html}</td></tr>\n')
         html += "</table>\n"
 
         # Human feedback
@@ -878,6 +1489,13 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
 # Report assembly
 # ---------------------------------------------------------------------------
 
+def _wrap_section(content: str) -> str:
+    """Wrap a section's HTML in a styled card. Returns empty if content is empty."""
+    if not content.strip():
+        return ""
+    return f'<section class="section">\n{content}</section>\n'
+
+
 def generate_report(config, summary, run_result, run_dir,
                     review=None, baseline_dir=None,
                     baseline_summary=None, baseline_result=None):
@@ -885,22 +1503,30 @@ def generate_report(config, summary, run_result, run_dir,
     run_id = summary.get("run_id", run_dir.name)
 
     html = f"""<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_esc(name)} — {_esc(run_id)}</title>
+<script>{THEME_SCRIPT}</script>
 <style>{CSS}</style>
 </head>
 <body>
+<button id="theme-toggle" type="button" aria-label="Toggle theme">\u263E</button>
 """
-    html += _render_header(config, run_id, run_result)
-    html += _render_run_config(run_result, baseline_result)
-    html += _render_scoring_summary(summary, config, baseline_summary)
-    html += _render_regressions(summary, config)
-    html += _render_analysis(run_dir)
-    html += _render_shared_outputs(run_dir, config)
+    baseline_id = None
+    if baseline_summary:
+        baseline_id = baseline_summary.get("run_id")
+    if not baseline_id and baseline_dir:
+        baseline_id = baseline_dir.name
+    html += _render_header(config, run_id, run_result, baseline_id)
+    html += _wrap_section(_render_run_config(run_result, baseline_result))
+    html += _render_analysis(run_dir, summary, run_result, baseline_summary)
+    html += _wrap_section(_render_scoring_summary(summary, config, baseline_summary))
+    html += _wrap_section(_render_regressions(summary, config))
+    html += _wrap_section(_render_shared_outputs(run_dir, config))
     html += _render_per_case(summary, run_dir, config, baseline_dir, review)
-    html += "\n</body>\n</html>\n"
+    html += f"\n<script>{TOGGLE_SCRIPT}</script>\n</body>\n</html>\n"
     return html
 
 
