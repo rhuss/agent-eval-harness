@@ -110,11 +110,12 @@ def main():
         # ── Per-model cost and token breakdown ───────────────────
         per_model = run_result.get("per_model_usage", {})
         if per_model:
+            import re
             for model_name, stats in per_model.items():
                 # Sanitize model name for MLflow metric keys:
                 # only alphanumerics, underscores, dashes, periods, spaces,
                 # colons, and slashes are allowed.
-                safe_name = model_name.replace("@", "-")
+                safe_name = re.sub(r"[^A-Za-z0-9_\-\. :/]", "-", model_name)
                 prefix = f"model/{safe_name}"
                 if stats.get("cost_usd") is not None:
                     mlflow.log_metric(f"{prefix}/cost_usd", stats["cost_usd"])
