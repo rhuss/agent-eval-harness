@@ -101,16 +101,20 @@ If the case count is 0, stop — the filter matched nothing.
 
 ## Step 3b: Resolve Tool Interception (if `inputs.tools` configured)
 
-If eval.yaml has `inputs.tools` entries, the workspace script generates basic hook patterns from the `match` text. But complex prompts (like "only allow test Jira instances") need you to refine the generated `tool_handlers.yaml`.
+If eval.yaml has `inputs.tools` entries, this step is **mandatory** — it is the dynamic-permission stage of the harness. `workspace.py` only emits a skeleton (`patterns` + the natural-language `prompt`); you must turn the prompt into concrete runtime checks. Do not skip this even when the eval.yaml is unchanged from a prior run — the resolved checks live in the workspace, which is created fresh each time.
 
-Read `${CLAUDE_SKILL_DIR}/references/tool-interception.md` for the full format and field reference. Then read `<workspace>/tool_handlers.yaml` and for each handler:
+**Critical default to fix**: any handler with `patterns: [Bash, ...]` and no `input_filters` is non-functional — the hook will skip it with a stderr warning, and the underlying tool will pass through unchecked. If you intend to gate Bash, you must add `input_filters`.
+
+Read `${CLAUDE_SKILL_DIR}/references/tool-interception.md` for the full format and field reference. Then read `<workspace>/tool_handlers.yaml` and for **every** handler:
 
 1. Read the `match` and `prompt` fields
 2. Resolve the `prompt` into concrete runtime checks:
-   - **For AskUserQuestion**: load per-case answers from dataset `answers.yaml` files into `case_overrides`
-   - **For service interception** (Jira, Slack, etc.): add `env_checks` (which env vars to validate) and `input_filters` (regex patterns for Bash command content)
-   - **For blocking**: ensure `patterns` match correctly — the default deny behavior handles the rest
+   - **For AskUserQuestion**: load per-case answers from dataset `answers.yaml` files into `case_overrides`. If the dataset has none, the auto-accept fallback (first option / "yes") is fine.
+   - **For service interception** (Jira, Slack, etc.): add `env_checks` (which env vars to validate) and `input_filters` (regex patterns for Bash command content). For Bash this is required, not optional.
+   - **For blocking**: explicit MCP patterns (e.g. `mcp__atlassian__*`) deny by default once matched; just confirm the patterns are right.
 3. Write the updated handler back to `tool_handlers.yaml`
+
+Before continuing to Step 4, sanity-check: every `Bash` pattern has matching `input_filters`, and every non-Bash handler either has `env_checks` or is intended to deny by default.
 
 The hook script (`tools.py`) uses these concrete checks at runtime — no LLM needed during execution.
 

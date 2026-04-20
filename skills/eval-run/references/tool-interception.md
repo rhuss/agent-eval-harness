@@ -65,6 +65,7 @@ case_overrides:
 2. `input_filters: ["jira", "JIRA_SERVER"]` means the Bash command must contain "jira" or "JIRA_SERVER" (case-insensitive)
 3. A `ls -la` command won't match even though "Bash" is in patterns
 4. If matched and `env_checks` present: same env validation as MCP tools
+5. **A handler with `Bash` in patterns but no `input_filters` is treated as misconfigured**: the hook logs a stderr warning and skips it (pass-through). Without filters, every Bash call would otherwise hit the default-deny in `main()` and the skill could not run.
 
 ### Unmatched Tools
 
