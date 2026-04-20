@@ -555,14 +555,14 @@ def _get_anthropic_client():
     raise RuntimeError("Set ANTHROPIC_VERTEX_PROJECT_ID or ANTHROPIC_API_KEY")
 
 
-def _call_judge(client, system_prompt, user_message, model):
+def _call_judge(client, system_prompt, user_message, model, max_tokens=8192):
     try:
         response = client.messages.create(
-            model=model, max_tokens=4096,
-            system=("You are a judge comparing two outputs. Be concise in your reasoning. "
-                    "You MUST end your response with a JSON object containing "
-                    "a 'preferred' field set to 'A', 'B', or 'tie'. "
-                    "Example: {\"reasoning\": \"...\", \"preferred\": \"A\"}"),
+            model=model, max_tokens=max_tokens,
+            system=("You are a judge comparing two outputs. "
+                    "You MUST end your response with a JSON object that follows "
+                    "the schema specified in the user prompt and includes a "
+                    "'preferred' field set to 'A', 'B', or 'tie'."),
             messages=[
                 {"role": "user", "content": f"{system_prompt}\n\n{user_message}"},
             ],
@@ -597,7 +597,12 @@ def _call_judge(client, system_prompt, user_message, model):
                             except json.JSONDecodeError:
                                 pass
                         break
-            return None, f"Could not parse JSON from response: {text[:200]}"
+            # Retry once with a larger budget if the response was truncated.
+            if response.stop_reason == "max_tokens" and max_tokens < 16384:
+                return _call_judge(client, system_prompt, user_message, model,
+                                   max_tokens=max_tokens * 2)
+            return None, (f"Could not parse JSON from response "
+                          f"(stop_reason={response.stop_reason}): {text[:200]}")
     except Exception as e:
         return None, str(e)
 
