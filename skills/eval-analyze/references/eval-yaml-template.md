@@ -50,8 +50,12 @@ models:
   judge: <model-id>         # Used by LLM and pairwise judges
 
 # Permissions for headless execution
+# The Skill tool requires explicit permission in --print mode.
+# If the skill under test invokes sub-skills via the Skill tool
+# (check its allowed-tools frontmatter for "Skill"), add "Skill"
+# to the allow list — otherwise nested skill calls silently fail.
 permissions:
-  allow: []     # Tool patterns to allow (empty = all)
+  allow: []     # Tool patterns to allow (e.g., "Skill", "Write(artifacts/**)")
   deny: []      # Tool patterns to block (e.g., "mcp__*")
 
 # MLflow logging target (optional)
