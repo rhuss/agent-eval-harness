@@ -21,6 +21,8 @@ _print_lock = threading.Lock()
 class ClaudeCodeRunner(EvalRunner):
     """Runs skills using the Claude Code CLI in non-interactive mode."""
 
+    _VALID_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+
     def __init__(
         self,
         permissions: Optional[dict] = None,
@@ -31,6 +33,7 @@ class ClaudeCodeRunner(EvalRunner):
         mlflow_experiment: Optional[str] = None,
         mlflow_tracking_uri: Optional[str] = None,
         log_prefix: Optional[str] = None,
+        effort: Optional[str] = None,
     ):
         self._permissions = permissions or {}
         self._subagent_model = subagent_model
@@ -40,6 +43,11 @@ class ClaudeCodeRunner(EvalRunner):
         self._mlflow_experiment = mlflow_experiment
         self._mlflow_tracking_uri = mlflow_tracking_uri
         self._log_prefix = log_prefix
+        if effort and effort not in self._VALID_EFFORTS:
+            raise ValueError(
+                f"Invalid effort '{effort}'. "
+                f"Must be one of: {sorted(self._VALID_EFFORTS)}")
+        self._effort = effort
 
     @property
     def name(self) -> str:
@@ -78,6 +86,9 @@ class ClaudeCodeRunner(EvalRunner):
         ]
         if self._log_prefix:
             cmd.append("--verbose")
+
+        if self._effort:
+            cmd.extend(["--effort", self._effort])
 
         for plugin_dir in self._plugin_dirs:
             cmd.extend(["--plugin-dir", str(plugin_dir)])

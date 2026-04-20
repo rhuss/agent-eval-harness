@@ -55,6 +55,9 @@ def main():
     parser.add_argument("--max-budget", type=float, default=None)
     parser.add_argument("--timeout", type=int, default=None)
     parser.add_argument("--mlflow-experiment", default=None)
+    parser.add_argument("--effort", default=None,
+                        choices=["low", "medium", "high", "xhigh", "max"],
+                        help="Claude Code reasoning effort (default: from eval.yaml runner.effort)")
     args = parser.parse_args()
 
     from agent_eval.config import EvalConfig
@@ -95,6 +98,7 @@ def main():
     runner_cls = RUNNERS[agent]
 
     mlflow_experiment = args.mlflow_experiment or config.mlflow.experiment
+    effort = args.effort or config.runner.effort
 
     runner = runner_cls(
         permissions=config.permissions,
@@ -105,6 +109,7 @@ def main():
         mlflow_experiment=mlflow_experiment,
         mlflow_tracking_uri=config.mlflow.tracking_uri,
         log_prefix="eval",
+        effort=effort,
     )
 
     # Resolve timeout and budget: CLI override > config > defaults.
@@ -123,7 +128,7 @@ def main():
     system_prompt = "\n\n".join(p for p in [existing_prompt, _HARNESS_SYSTEM_PROMPT] if p)
 
     # Capture user-facing eval parameters that defined this run, for the report.
-    eval_params = _build_eval_params(args, config, skill_args, max_budget, timeout_s)
+    eval_params = _build_eval_params(args, config, skill_args, max_budget, timeout_s, effort)
 
     # ── Per-case execution ───────────────────────────────────────
     if config.execution.mode == "case":
@@ -196,13 +201,15 @@ def _resolve_arguments(template, case_data):
     return result
 
 
-def _build_eval_params(args, config, skill_args, max_budget, timeout_s):
+def _build_eval_params(args, config, skill_args, max_budget, timeout_s, effort=None):
     """Snapshot the user-facing eval parameters that defined this run.
 
     Surfaced in the HTML report so reviewers can see *what was run* without
     inspecting the harness invocation. Only includes parameters that are
     meaningful to a reader: the dataset/skill args, budget caps, execution
-    mode, and optional flags actually set."""
+    mode, and optional flags actually set. Resolved values (effort, budget,
+    timeout) are passed in so the snapshot reflects what actually ran, not
+    just what was overridden via CLI."""
     params = {
         "skill": args.skill,
         "skill_args": skill_args or "",
@@ -210,8 +217,8 @@ def _build_eval_params(args, config, skill_args, max_budget, timeout_s):
         "max_budget_usd": max_budget,
         "timeout_s": timeout_s,
     }
-    if getattr(args, "effort", None):
-        params["effort"] = args.effort
+    if effort:
+        params["effort"] = effort
     if getattr(args, "mlflow_experiment", None):
         params["mlflow_experiment"] = args.mlflow_experiment
     return params

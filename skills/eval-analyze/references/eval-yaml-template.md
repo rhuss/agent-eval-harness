@@ -41,6 +41,7 @@ runner:
   # plugin_dirs: []         # Plugin dirs the evaluated skill needs
   # env_strip: [JIRA_TOKEN] # Env vars to remove before launching the runner
   # system_prompt: ""       # Appended to harness system prompt
+  # effort: high            # Claude Code reasoning effort: low | medium | high | xhigh | max
 
 # Models — defaults for each role (CLI flags override)
 models:
