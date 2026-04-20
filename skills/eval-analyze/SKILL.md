@@ -120,6 +120,7 @@ Key points:
 - **Models**: set `models.skill` to a sensible default (e.g., `claude-opus-4-7`) so the user doesn't need `--model` on every invocation. Set `models.judge` to the same or a comparable model — LLM and pairwise judges read it. CLI flags override.
 - **MLflow**: set `mlflow.experiment` to `<project>-eval` (or leave blank — it falls back to the top-level `name`).
 - The `dataset.schema` and `outputs[*].schema` fields drive the entire pipeline — be specific, reference actual file/field names you observed
+- **Permissions**: if the skill's `allowed-tools` frontmatter includes `Skill` (meaning it invokes sub-skills), add `"Skill"` to `permissions.allow`. The Skill tool requires explicit permission in headless mode — without it, nested skill calls fail silently and the pipeline degrades.
 - If the skill uses AskUserQuestion, calls external services (MCP tools), or runs scripts that interact with APIs, add `inputs.tools` entries. Use `match` to describe what to intercept in natural language (e.g., "any Jira interaction via MCP or scripts"), and `prompt` for how to handle it.
 - Aim for 2-4 inline `check` judges + 1-2 LLM `prompt` judges. Start lean.
 - If `--update`: preserve everything already in the file, only add missing top-level keys (e.g., add a `models:` block if the user is upgrading from an older config that lacked it)
