@@ -320,6 +320,8 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
             "token_usage": result.token_usage,
             "cost_usd": result.cost_usd,
             "num_turns": result.num_turns,
+            "per_model_usage": result.per_model_usage,
+            "per_model_turns": result.per_model_turns,
         }
 
         # Write per-case run_result.json so score.py can read
@@ -400,6 +402,7 @@ def _save_result(result, args, output_dir, runner, model, eval_params=None):
         "cost_usd": result.cost_usd,
         "per_model_usage": result.per_model_usage,
         "num_turns": result.num_turns,
+        "per_model_turns": result.per_model_turns,
         "model": full_model,
         "subagent_model": subagent_model_str,
         "agent": runner.name,

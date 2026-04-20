@@ -67,17 +67,22 @@ def extract_usage(stdout_lines):
 
     Returns:
         Tuple of (token_usage, cost_usd, num_turns, seen_msg_ids,
-        models_seen, per_model_usage).
+        models_seen, per_model_usage, seen_msg_ids_by_model).
         ``num_turns`` counts all assistant turns visible in the stream.
         ``seen_msg_ids`` is the set of message IDs for deduplication with
         subagent transcripts.
         ``per_model_usage`` is a dict mapping model name to token/cost breakdown,
         or None if modelUsage was absent.
+        ``seen_msg_ids_by_model`` is a dict mapping model name to its set of
+        observed message IDs (for per-model turn counting and deduplication
+        with :func:`count_subagent_turns_by_model`), or None if no assistant
+        events were seen. Per-model turn counts are ``{m: len(ids)}``.
     """
     cost_usd = None
     models_seen = set()
     model_usage = None
     seen_msg_ids = set()
+    seen_msg_ids_by_model = {}
     fb_input = fb_output = fb_cache_read = fb_cache_create = 0
     for line in stdout_lines:
         try:
@@ -86,14 +91,16 @@ def extract_usage(stdout_lines):
             continue
         if obj.get("type") == "assistant":
             msg_id = obj.get("message", {}).get("id")
+            model = obj.get("message", {}).get("model")
             if msg_id:
                 seen_msg_ids.add(msg_id)
+                if model:
+                    seen_msg_ids_by_model.setdefault(model, set()).add(msg_id)
             u = obj.get("message", {}).get("usage", {})
             fb_input += u.get("input_tokens", 0)
             fb_output += u.get("output_tokens", 0)
             fb_cache_read += u.get("cache_read_input_tokens", 0)
             fb_cache_create += u.get("cache_creation_input_tokens", 0)
-            model = obj.get("message", {}).get("model")
             if model:
                 models_seen.add(model)
         elif obj.get("type") == "result":
@@ -133,7 +140,8 @@ def extract_usage(stdout_lines):
             "cache_read": fb_cache_read, "cache_create": fb_cache_create,
         }
     num_turns = len(seen_msg_ids) or None
-    return token_usage, cost_usd, num_turns, seen_msg_ids, models_seen, per_model_usage
+    return (token_usage, cost_usd, num_turns, seen_msg_ids, models_seen,
+            per_model_usage, seen_msg_ids_by_model or None)
 
 
 # ── Subagent turn counting ──────────────────────────────────────────
@@ -182,6 +190,49 @@ def count_subagent_turns(subagent_dir, already_seen=None):
         except OSError:
             continue
     return len(seen) - initial_count
+
+
+def count_subagent_turns_by_model(subagent_dir, already_seen_by_model=None):
+    """Count NEW unique assistant turns per model across subagent transcripts.
+
+    Like :func:`count_subagent_turns` but groups by ``message.model``. Only
+    counts message IDs that aren't already in ``already_seen_by_model[model]``,
+    so callers can pass in IDs already counted from the main stream.
+
+    Args:
+        subagent_dir: Path to directory containing ``*.jsonl`` transcripts.
+        already_seen_by_model: Optional dict mapping model name to a set of
+            already-counted message IDs (from the main stream).
+
+    Returns:
+        Dict mapping model name to count of new assistant turns. Returns an
+        empty dict if the directory is missing or has no assistant turns.
+    """
+    subagent_path = Path(subagent_dir)
+    if not subagent_path.is_dir():
+        return {}
+    seen = {m: set(ids) for m, ids in (already_seen_by_model or {}).items()}
+    initial_counts = {m: len(s) for m, s in seen.items()}
+    for transcript in subagent_path.iterdir():
+        if not transcript.is_file() or transcript.suffix != ".jsonl":
+            continue
+        try:
+            with open(transcript) as f:
+                for line in f:
+                    try:
+                        obj = json.loads(line)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    msg = obj.get("message", {})
+                    if msg.get("role") == "assistant":
+                        msg_id = msg.get("id")
+                        model = msg.get("model")
+                        if msg_id and model:
+                            seen.setdefault(model, set()).add(msg_id)
+        except OSError:
+            continue
+    return {m: len(s) - initial_counts.get(m, 0) for m, s in seen.items()
+            if len(s) - initial_counts.get(m, 0) > 0}
 
 
 # ── Subagent capture via hooks ───────────────────────────────────────

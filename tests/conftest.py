@@ -130,13 +130,17 @@ def write_transcripts(tmp_path, transcripts):
     for agent_id, messages in transcripts.items():
         lines = []
         for msg_id, role in messages:
-            lines.append(json.dumps({
-                "message": {
-                    "role": role,
-                    "id": msg_id,
-                    "content": [{"type": "text", "text": "..."}],
-                },
-            }))
+            msg = {
+                "role": role,
+                "id": msg_id,
+                "content": [{"type": "text", "text": "..."}],
+            }
+            # Real Claude Code subagent transcripts include `model` on every
+            # assistant message; default to a fixed value so per-model turn
+            # counting has something to attribute to.
+            if role == "assistant":
+                msg["model"] = "claude-sonnet-4-5"
+            lines.append(json.dumps({"message": msg}))
         (subdir / f"agent-{agent_id}.jsonl").write_text("\n".join(lines) + "\n")
     return subdir
 

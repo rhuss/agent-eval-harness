@@ -12,10 +12,24 @@ from typing import Optional
 from .base import EvalRunner, RunResult
 from .stream_capture import (
     make_prompt_event, inject_timestamp, extract_usage,
-    count_subagent_turns, setup_subagent_hook,
+    count_subagent_turns, count_subagent_turns_by_model, setup_subagent_hook,
 )
 
 _print_lock = threading.Lock()
+
+
+def _per_model_turns(subagent_dir, stream_ids_by_model):
+    """Combine stream-level per-model turn IDs with subagent transcripts.
+
+    Returns ``{model: turn_count}`` summing stream IDs and any new IDs found
+    in subagent transcripts (deduplicated by message ID). Returns None if no
+    per-model data is available, so the field stays absent rather than {}."""
+    by_model = {m: set(ids) for m, ids in (stream_ids_by_model or {}).items()}
+    new_per_model = count_subagent_turns_by_model(subagent_dir, by_model) or {}
+    counts = {m: len(ids) for m, ids in by_model.items()}
+    for m, n in new_per_model.items():
+        counts[m] = counts.get(m, 0) + n
+    return counts or None
 
 
 class ClaudeCodeRunner(EvalRunner):
@@ -171,12 +185,15 @@ class ClaudeCodeRunner(EvalRunner):
             proc.kill()
             proc.wait()
             duration = time.monotonic() - start
-            token_usage, cost_usd, num_turns, stream_ids, models_seen, per_model_usage = extract_usage(stdout_lines)
+            (token_usage, cost_usd, num_turns, stream_ids, models_seen,
+             per_model_usage, stream_ids_by_model) = extract_usage(stdout_lines)
             # Add subagent turns from captured transcripts, deduplicating
             # against IDs already seen in the stream
             subagent_turns = count_subagent_turns(workspace / "subagents", already_seen=stream_ids)
             if subagent_turns:
                 num_turns = (num_turns or 0) + subagent_turns
+            per_model_turns = _per_model_turns(
+                workspace / "subagents", stream_ids_by_model)
             return RunResult(
                 exit_code=-1,
                 stdout="\n".join(stdout_lines),
@@ -188,6 +205,7 @@ class ClaudeCodeRunner(EvalRunner):
                 resolved_model=resolved_model,
                 models_used=sorted(models_seen) if models_seen else None,
                 per_model_usage=per_model_usage,
+                per_model_turns=per_model_turns,
             )
         except Exception as e:
             duration = time.monotonic() - start
@@ -212,7 +230,8 @@ class ClaudeCodeRunner(EvalRunner):
             except json.JSONDecodeError:
                 pass
 
-        token_usage, cost_usd, num_turns, stream_ids, models_seen, per_model_usage = extract_usage(stdout_lines)
+        (token_usage, cost_usd, num_turns, stream_ids, models_seen,
+         per_model_usage, stream_ids_by_model) = extract_usage(stdout_lines)
         if not cost_usd and isinstance(result_obj, dict):
             cost_usd = result_obj.get("total_cost_usd")
 
@@ -222,6 +241,8 @@ class ClaudeCodeRunner(EvalRunner):
         subagent_turns = count_subagent_turns(workspace / "subagents", already_seen=stream_ids)
         if subagent_turns:
             num_turns = (num_turns or 0) + subagent_turns
+        per_model_turns = _per_model_turns(
+            workspace / "subagents", stream_ids_by_model)
 
         return RunResult(
             exit_code=proc.returncode,
@@ -234,6 +255,7 @@ class ClaudeCodeRunner(EvalRunner):
             resolved_model=resolved_model,
             models_used=sorted(models_seen) if models_seen else None,
             per_model_usage=per_model_usage,
+            per_model_turns=per_model_turns,
             raw_output=raw_output,
         )
 
