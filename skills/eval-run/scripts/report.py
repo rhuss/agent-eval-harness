@@ -540,7 +540,7 @@ def _render_run_config(run_result, baseline_result=None):
                 html += f'<dd class="bl">{_esc(bl)}{delta_html}</dd>'
         html += '</div>\n'
     html += "</dl>\n"
-    html += _render_token_usage(run_result, baseline_result)
+    html += _render_model_usage(run_result, baseline_result)
     html += _render_eval_params(run_result)
     return html
 
@@ -628,10 +628,15 @@ def _render_eval_params(run_result):
     )
 
 
-def _render_token_usage(run_result, baseline_result=None):
-    """Render token usage: a Total mini-table aggregating all models, plus
-    one mini-table per individual model when per_model_usage is available.
-    All tables share the .config-table layout for visual alignment."""
+def _render_model_usage(run_result, baseline_result=None):
+    """Render model usage: token counts, cost, cache hit rate, and derived
+    per-turn / per-Mtok efficiency metrics. One column per model plus an
+    optional Total column when more than one model is present.
+
+    Per-turn rows (cost / turn, output tokens / turn) require num_turns,
+    which the runner only reports at the whole-run level. They render in
+    the Total column for multi-model runs, and in the single model's
+    column for single-model runs (where they're unambiguous)."""
     tokens = run_result.get("token_usage") or {}
     bl_tokens = (baseline_result or {}).get("token_usage") or {}
     per_model = run_result.get("per_model_usage") or {}
@@ -642,94 +647,134 @@ def _render_token_usage(run_result, baseline_result=None):
 
     has_bl = bool(bl_tokens) or bool(bl_per_model)
 
-    def _fmt(usage, key):
+    def _compute(usage, key):
+        """Return numeric value for a key, or None if not derivable."""
         if not usage:
+            return None
+        inp = usage.get("input", 0) or 0
+        out = usage.get("output", 0) or 0
+        cr = usage.get("cache_read", 0) or 0
+        cw = usage.get("cache_create", 0) or 0
+        cost = usage.get("cost_usd")
+        turns = usage.get("num_turns")
+        total_in = inp + cr + cw
+        total_tokens = total_in + out
+        if key == "input":         return inp or None
+        if key == "output":        return out or None
+        if key == "cache_read":    return cr or None
+        if key == "cache_create":  return cw or None
+        if key == "cost_usd":      return cost
+        if key == "hit":           return (cr / total_in) if total_in else None
+        if key == "cpt":           return (cost / turns) if (cost is not None and turns) else None
+        if key == "opt":           return (out / turns) if (out and turns) else None
+        if key == "mtok":          return (cost / total_tokens * 1_000_000) if (cost is not None and total_tokens) else None
+        return None
+
+    def _fmt(usage, key):
+        v = _compute(usage, key)
+        if v is None:
             return "—"
         if key == "hit":
-            inp = usage.get("input", 0) or 0
-            cr = usage.get("cache_read", 0) or 0
-            cw = usage.get("cache_create", 0) or 0
-            total_in = inp + cr + cw
-            return f"{cr / total_in:.1%}" if total_in else "—"
-        v = usage.get(key, 0) or 0
+            return f"{v:.1%}"
         if key == "cost_usd":
             return f"${v:.2f}"
+        if key == "cpt":
+            return f"${v:.4f}"
+        if key == "mtok":
+            return f"${v:.2f}"
+        if key == "opt":
+            return f"{v:,.0f}"
         return f"{v:,}"
 
-    # token_usage doesn't include cost_usd; pull it from run_result for the total
-    def _total(usage_dict, run_data):
-        if not usage_dict and not run_data:
-            return None
-        merged = dict(usage_dict or {})
-        if run_data and "cost_usd" in run_data:
-            merged["cost_usd"] = run_data.get("cost_usd")
-        return merged
-
-    metrics = [
-        ("Input", "input"),
-        ("Output", "output"),
-        ("Cache read", "cache_read"),
-        ("Cache write", "cache_create"),
-        ("Hit", "hit"),
-        ("Cost", "cost_usd"),
-    ]
-    # higher-is-better metrics; everything else assumed lower-is-better
+    # Higher-is-better metrics; everything else assumed lower-is-better.
+    # cache_read raw count is higher-better as a proxy for cache exploitation.
     higher_better = {"cache_read", "hit"}
-
-    def _hit_rate(u):
-        if not u:
-            return None
-        inp = u.get("input", 0) or 0
-        cr = u.get("cache_read", 0) or 0
-        cw = u.get("cache_create", 0) or 0
-        t = inp + cr + cw
-        return cr / t if t else None
+    # Percentage-point delta (vs %) for these rate-like metrics
+    pp_delta = {"hit"}
 
     def _delta(cur, bl, key):
         """Return (arrow, delta_str, css_class) or (None, None, None)."""
-        if not cur or not bl:
+        cur_v = _compute(cur, key)
+        bl_v = _compute(bl, key)
+        if cur_v is None or bl_v is None or bl_v == 0:
             return (None, None, None)
-        if key == "hit":
-            cur_v = _hit_rate(cur)
-            bl_v = _hit_rate(bl)
-            if cur_v is None or bl_v is None:
-                return (None, None, None)
-            diff = cur_v - bl_v
+        diff = cur_v - bl_v
+        if key in pp_delta:
             if abs(diff) < 0.0005:
                 return ("→", "0pp", "delta-flat")
             arrow = "↑" if diff > 0 else "↓"
             sign = "+" if diff > 0 else ""
-            return (arrow, f"{sign}{diff * 100:.1f}pp",
-                    "delta-good" if (diff > 0) == (key in higher_better) else "delta-bad")
-        cur_v = cur.get(key, 0) or 0
-        bl_v = bl.get(key, 0) or 0
-        if bl_v == 0:
-            return (None, None, None)
-        diff = cur_v - bl_v
+            cls = "delta-good" if (diff > 0) == (key in higher_better) else "delta-bad"
+            return (arrow, f"{sign}{diff * 100:.1f}pp", cls)
         if diff == 0:
             return ("→", "0%", "delta-flat")
         pct = (diff / bl_v) * 100
         arrow = "↑" if diff > 0 else "↓"
         sign = "+" if diff > 0 else ""
-        return (arrow, f"{sign}{pct:.1f}%",
-                "delta-good" if (diff > 0) == (key in higher_better) else "delta-bad")
+        cls = "delta-good" if (diff > 0) == (key in higher_better) else "delta-bad"
+        return (arrow, f"{sign}{pct:.1f}%", cls)
 
-    cur_total = _total(tokens, run_result)
-    bl_total = _total(bl_tokens, baseline_result)
+    # Inject cost_usd and num_turns into a usage dict so derived metrics
+    # can be computed. Used for the Total column (whole-run aggregate).
+    def _enrich(usage_dict, run_data):
+        if not usage_dict and not run_data:
+            return None
+        merged = dict(usage_dict or {})
+        if run_data:
+            if "cost_usd" in run_data:
+                merged["cost_usd"] = run_data.get("cost_usd")
+            if "num_turns" in run_data:
+                merged["num_turns"] = run_data.get("num_turns")
+        return merged
+
+    cur_total = _enrich(tokens, run_result)
+    bl_total = _enrich(bl_tokens, baseline_result)
     models = sorted(set(per_model) | set(bl_per_model))
     show_total = bool(cur_total or bl_total) and len(models) != 1
+
+    # Build per-model usage dicts. Inject per-model num_turns when the runner
+    # captured it (cross-model runs); fall back to whole-run num_turns when a
+    # side's run had only one model (per-turn rows are then unambiguous).
+    cur_pmt = run_result.get("per_model_turns") or {}
+    bl_pmt = (baseline_result or {}).get("per_model_turns") or {}
+    cur_per_model = {m: dict(per_model.get(m) or {}) for m in models}
+    bl_per_model_d = {m: dict(bl_per_model.get(m) or {}) for m in models}
+    cur_only_model = next(iter(per_model)) if len(per_model) == 1 else None
+    bl_only_model = next(iter(bl_per_model)) if len(bl_per_model) == 1 else None
+    for m in models:
+        if cur_pmt.get(m) is not None:
+            cur_per_model[m].setdefault("num_turns", cur_pmt[m])
+        elif m == cur_only_model and run_result.get("num_turns") is not None:
+            cur_per_model[m].setdefault("num_turns", run_result["num_turns"])
+        if bl_pmt.get(m) is not None:
+            bl_per_model_d[m].setdefault("num_turns", bl_pmt[m])
+        elif (m == bl_only_model and baseline_result
+              and baseline_result.get("num_turns") is not None):
+            bl_per_model_d[m].setdefault("num_turns", baseline_result["num_turns"])
 
     # Build column list: optional Total, then each model
     columns = []
     if show_total:
         columns.append(("Total", cur_total, bl_total))
     for m in models:
-        columns.append((m, per_model.get(m), bl_per_model.get(m)))
+        columns.append((m, cur_per_model.get(m) or None, bl_per_model_d.get(m) or None))
 
     if not columns:
         return ""
 
-    html = '<h3 class="subsection-heading">Token Usage</h3>\n'
+    metrics = [
+        ("Input tokens", "input"),
+        ("Output tokens", "output"),
+        ("Cache read", "cache_read"),
+        ("Cache write", "cache_create"),
+        ("Cache hit", "hit"),
+        ("Cost", "cost_usd"),
+        ("Cost / turn", "cpt"),
+        ("Output tokens / turn", "opt"),
+        ("Cost / Mtok", "mtok"),
+    ]
+
+    html = '<h3 class="subsection-heading">Model Usage</h3>\n'
     html += '<table class="usage-table">\n'
     html += '<tr><th></th>'
     for label, _, _ in columns:
