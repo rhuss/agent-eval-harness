@@ -175,7 +175,8 @@ def main():
         (trace_dir / "stderr.log").write_text(stderr)
 
     # run_result.json
-    token_usage, cost_usd, num_turns, stream_ids, models_seen, per_model_usage = extract_usage(stdout_lines)
+    (token_usage, cost_usd, num_turns, stream_ids, models_seen,
+     per_model_usage, _stream_ids_by_model) = extract_usage(stdout_lines)
     # Add subagent turns from captured transcripts, deduplicating
     # against IDs already seen in the stream
     subagent_dir = trace_dir / "subagents"
