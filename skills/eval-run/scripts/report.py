@@ -462,6 +462,7 @@ def _render_run_config(run_result, baseline_result=None):
     fields = [
         ("Model", "model"),
         ("Subagent Model", "subagent_model"),
+        ("Effort", "effort"),
         ("Agent", "agent"),
         ("Agent Version", "agent_version"),
         ("Duration", "duration_s"),
@@ -471,6 +472,16 @@ def _render_run_config(run_result, baseline_result=None):
     ]
     # Numeric fields where a baseline delta is meaningful (lower is better)
     numeric_lower_better = {"duration_s", "cost_usd", "num_turns"}
+    # Optional fields that are hidden when not set on either run, to avoid
+    # showing rows of "—" for knobs the user isn't using (e.g. effort).
+    optional_fields = {"effort"}
+
+    def _lookup(rr, key):
+        if not rr:
+            return None
+        if key in rr:
+            return rr.get(key)
+        return (rr.get("eval_params") or {}).get(key)
 
     def _fmt(key, val):
         if val is None or val == "":
@@ -509,13 +520,18 @@ def _render_run_config(run_result, baseline_result=None):
 
     html = '<h2>Run Configuration</h2>\n<dl class="config-grid">\n'
     for label, key in fields:
-        cur_raw = run_result.get(key)
+        cur_raw = _lookup(run_result, key)
         cur = _fmt(key, cur_raw)
+        # Hide optional knobs (e.g. effort) when neither side set them, to
+        # avoid showing a row of "—" for a feature the user isn't using.
+        if (key in optional_fields and cur == "—"
+                and (not has_bl or _fmt(key, _lookup(baseline_result, key)) == "—")):
+            continue
         html += '<div class="kv">'
         html += f'<dt>{label}</dt>'
         html += f'<dd>{_esc(cur)}</dd>'
         if has_bl:
-            bl_raw = baseline_result.get(key)
+            bl_raw = _lookup(baseline_result, key)
             bl = _fmt(key, bl_raw)
             if bl != cur:
                 d = _scalar_delta(key, cur_raw, bl_raw)

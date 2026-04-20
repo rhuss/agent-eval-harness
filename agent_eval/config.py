@@ -115,6 +115,7 @@ class RunnerConfig:
     plugin_dirs: list = field(default_factory=list)
     env_strip: list = field(default_factory=list)
     system_prompt: Optional[str] = None
+    effort: Optional[str] = None  # Claude Code: low | medium | high | xhigh | max
 
 
 @dataclass
@@ -254,6 +255,7 @@ class EvalConfig:
             plugin_dirs=runner_raw.get("plugin_dirs", []) or [],
             env_strip=runner_raw.get("env_strip", []) or [],
             system_prompt=runner_raw.get("system_prompt"),
+            effort=runner_raw.get("effort"),
         )
 
         # Models block

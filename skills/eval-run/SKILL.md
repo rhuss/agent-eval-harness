@@ -24,6 +24,7 @@ Parse `$ARGUMENTS`:
 | `--baseline <run-id>` | no | — | Previous run to compare against |
 | `--no-judge` | no | false | Skip LLM judges, run inline checks only |
 | `--gold` | no | false | Save outputs as gold references after run |
+| `--effort <level>` | no | `runner.effort` from config | Claude Code reasoning effort (`low`/`medium`/`high`/`xhigh`/`max`) |
 
 Check if the config file exists (use the parsed config path, not hardcoded `eval.yaml`):
 
@@ -129,7 +130,8 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/execute.py \
   --output $AGENT_EVAL_RUNS_DIR/<id> \
   [--agent <runner>] \
   [--subagent-model <model>] \
-  [--mlflow-experiment <name>]
+  [--mlflow-experiment <name>] \
+  [--effort <level>]
 ```
 
 Most flags fall back to the config:
@@ -137,6 +139,7 @@ Most flags fall back to the config:
 - `--model` falls back to `models.skill`. If neither is set, execute.py errors out.
 - `--mlflow-experiment` falls back to `mlflow.experiment`.
 - `--skill-args` falls back to `execution.arguments`. In `case` mode, `{field}` placeholders are resolved per case from input.yaml.
+- `--effort` falls back to `runner.effort` (Claude Code only; ignored by other runners).
 
 Override via CLI only when testing different combinations than what the config specifies.
 
