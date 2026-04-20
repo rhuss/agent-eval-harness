@@ -675,6 +675,45 @@ def _merge_summary(run_id, key, data, runs_dir=None):
         yaml.dump(summary, f, default_flow_style=False, allow_unicode=True)
 
 
+def compute_run_metrics(run_result):
+    """Derive model/runner-level efficiency metrics from run_result.json.
+
+    These are workload-agnostic: cost per turn, output tokens per turn,
+    cache hit rate, and effective per-million-token prices. They stay
+    flat across runs of the same model+effort, so they're useful for
+    cross-model and cross-effort comparisons.
+
+    Returns None if the required fields are missing.
+    """
+    if not run_result:
+        return None
+    cost = run_result.get("cost_usd")
+    turns = run_result.get("num_turns")
+    tokens = run_result.get("token_usage") or {}
+    inp = tokens.get("input", 0) or 0
+    out = tokens.get("output", 0) or 0
+    cr = tokens.get("cache_read", 0) or 0
+    cw = tokens.get("cache_create", 0) or 0
+    total_in = inp + cr + cw
+
+    total_tokens = total_in + out
+
+    metrics = {}
+    if isinstance(cost, (int, float)) and isinstance(turns, int) and turns > 0:
+        metrics["cost_per_turn_usd"] = round(cost / turns, 6)
+    if isinstance(turns, int) and turns > 0 and out:
+        metrics["output_tokens_per_turn"] = round(out / turns, 2)
+    if total_in > 0:
+        metrics["cache_hit_rate"] = round(cr / total_in, 6)
+    # Effective $/Mtok across all token types (input + cache_read + cache_create
+    # + output), weighted by actual volume. Captures cache benefit: a high
+    # cache_read share pulls this below the model's list price. Useful for
+    # cross-model comparison at fixed effort and similar workload patterns.
+    if isinstance(cost, (int, float)) and total_tokens > 0:
+        metrics["cost_per_mtok_usd"] = round(cost / total_tokens * 1_000_000, 4)
+    return metrics or None
+
+
 def cmd_judges(args):
     config = EvalConfig.from_yaml(args.config)
     runs_dir = _get_runs_dir()
@@ -700,6 +739,22 @@ def cmd_judges(args):
         for name, agg in judge_results.get("aggregated", {}).items()
     }, runs_dir)
     _merge_summary(args.run_id, "per_case", judge_results.get("per_case", {}), runs_dir)
+
+    # Workload-agnostic run metrics for cross-run / cross-model comparison
+    rr_path = runs_dir / args.run_id / "run_result.json"
+    if rr_path.exists():
+        with open(rr_path) as f:
+            run_result = json.load(f)
+        run_metrics = compute_run_metrics(run_result)
+        if run_metrics:
+            _merge_summary(args.run_id, "run_metrics", run_metrics, runs_dir)
+            for k, v in run_metrics.items():
+                if "rate" in k:
+                    print(f"  {k}: {v:.1%}")
+                elif "cost" in k:
+                    print(f"  {k}: ${v:.4f}")
+                else:
+                    print(f"  {k}: {v:,.1f}")
 
     # Regression detection
     has_regressions = False
