@@ -60,13 +60,29 @@ def main():
 
 
 def _find_handler(tool_name, tool_input, handlers):
-    """Find the first handler that matches the tool call."""
+    """Find the first handler that matches the tool call.
+
+    Bash handlers REQUIRE input_filters — without them, a handler with
+    "Bash" in patterns would silently match every Bash command and the
+    default-deny in main() would block the entire skill. To prevent that
+    footgun, Bash handlers without input_filters are treated as
+    misconfigured: emit a stderr warning and skip (pass-through).
+    Resolve them in eval-run Step 3b before relying on the handler.
+    """
     for h in handlers:
         patterns = h.get("patterns", [])
         input_filters = h.get("input_filters", [])
 
-        # For Bash with input_filters: must match BOTH pattern AND filter
-        if tool_name == "Bash" and "Bash" in patterns and input_filters:
+        if tool_name == "Bash" and "Bash" in patterns:
+            if not input_filters:
+                print(
+                    f"tool_handlers.yaml: handler {h.get('match', '?')!r} "
+                    "has 'Bash' in patterns but no input_filters — "
+                    "skipping (would deny all Bash). Resolve in eval-run "
+                    "Step 3b.",
+                    file=sys.stderr,
+                )
+                continue
             command = tool_input.get("command", "")
             if any(re.search(f, command, re.IGNORECASE) for f in input_filters):
                 return h
