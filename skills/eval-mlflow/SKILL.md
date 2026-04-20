@@ -33,12 +33,12 @@ print(f'MLFLOW_TRACKING_URI={os.environ.get(\"MLFLOW_TRACKING_URI\", \"not set\"
 "
 ```
 
-If not configured, suggest running `/eval-setup` first. If the server is unreachable but MLFLOW_TRACKING_URI is set (e.g., remote server), proceed — the scripts handle connectivity errors gracefully.
+If not configured, suggest running `/eval-setup` first. The scripts resolve the tracking URI from `mlflow.tracking_uri` in eval.yaml first, then `MLFLOW_TRACKING_URI` env var, then default to `http://127.0.0.1:5000`. If the server is unreachable but a remote URI is set, proceed — the scripts handle connectivity errors gracefully.
 
 ## Step 2: Read Configuration
 
 Read eval.yaml to understand:
-- `mlflow_experiment` — the experiment name
+- `mlflow.experiment` — the experiment name
 - `dataset.path` and `dataset.schema` — where cases are and what they look like
 - `judges` — what was scored (for feedback context)
 
@@ -108,12 +108,12 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/log_results.py \
 ```
 
 This logs:
-- **Params**: skill, runner, model, run_id
+- **Params**: skill, runner.type, model, run_id
 - **Metrics**: per-judge mean and pass_rate, execution metrics (duration, cost, turns), per-model cost/token breakdown
 - **Artifacts**: summary.yaml
 - **Table**: per-case results with case_id, judge, value, rationale
 - **Traces**: one per case (case mode) or one for the run (batch mode), built from stdout.log
-- **Tags**: regressions_detected (yes/no)
+- **Tags**: regressions_detected (yes/no), num_judges, plus any `mlflow.tags` from eval.yaml
 
 ## Step 5: Push Feedback (if `--action push-feedback` or `all`)
 

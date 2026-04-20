@@ -13,8 +13,8 @@ The key difference from `/eval-review`: you act autonomously. You read judge rat
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| config (positional) | no | `eval.yaml` | Path to eval config |
-| `--model <model>` | **yes** | — | Model to use for eval runs |
+| `--config <path>` | no | `eval.yaml` | Path to eval config |
+| `--model <model>` | no | `models.skill` from eval.yaml | Model to use for eval runs (overrides config default) |
 | `--max-iterations <N>` | no | 3 | Stop after N improvement cycles |
 | `--run-id <id>` | no | auto-generated | Base run ID (iterations append `-iter-N`) |
 | `--target-judge <name>` | no | all judges | Focus on a specific failing judge |
@@ -30,8 +30,10 @@ python3 -m agent_eval.state init tmp/optimize-config.yaml \
 If no recent eval results exist, run the eval suite first:
 
 ```text
-Use the Skill tool to invoke /eval-run --model <model> --run-id <id>-iter-0 --config <config>
+Use the Skill tool to invoke /eval-run --run-id <id>-iter-0 --config <config> [--model <model>]
 ```
+
+Pass `--model` only if the user provided one — otherwise let `/eval-run` fall back to `models.skill` from eval.yaml. Pass the same model on every iteration for comparable results.
 
 If results already exist (the user just ran `/eval-run`), skip this and use the existing run.
 
@@ -111,7 +113,7 @@ Show each edit before applying. If the change is risky (could affect passing cas
 Run eval again with the baseline flag to detect regressions:
 
 ```text
-Use the Skill tool to invoke /eval-run --model <model> --run-id <id>-iter-<N> --baseline <id>-iter-<N-1> --config <config>
+Use the Skill tool to invoke /eval-run --run-id <id>-iter-<N> --baseline <id>-iter-<N-1> --config <config> [--model <model>]
 ```
 
 Read the new results:

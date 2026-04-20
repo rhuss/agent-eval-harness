@@ -156,7 +156,7 @@ def main():
     else:
         # Even without tool interception, set up SubagentStop hook
         # to capture background agent transcripts for tracing.
-        _setup_subagent_only_hook(workspace)
+        _setup_subagent_only_hook(workspace, config)
 
     print(f"WORKSPACE: {workspace}")
     print(f"CASES: {len(case_dirs)}")
@@ -228,7 +228,7 @@ def _create_per_case_workspace(workspace, case_dirs, config, args):
         if config.inputs.tools:
             _setup_tool_hooks(case_ws, config)
         else:
-            _setup_subagent_only_hook(case_ws)
+            _setup_subagent_only_hook(case_ws, config)
 
         case_order.append({"case_id": case_id})
 
@@ -342,7 +342,31 @@ def _carry_over_permissions(settings):
             "additionalDirectories", []).extend(dirs)
 
 
-def _setup_subagent_only_hook(workspace):
+def _deep_merge(dst, src):
+    """Recursively merge src into dst. Lists are extended, dicts merged."""
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(dst.get(k), dict):
+            _deep_merge(dst[k], v)
+        elif isinstance(v, list) and isinstance(dst.get(k), list):
+            dst[k].extend(v)
+        else:
+            dst[k] = v
+    return dst
+
+
+def _apply_runner_settings(settings, config):
+    """Merge eval.yaml `runner.settings` into the workspace settings dict.
+
+    Lets users add Claude Code settings (model defaults, env, MCP servers,
+    etc.) to a runner without forking the harness. Merged after harness
+    defaults so user overrides win for scalar keys; lists are extended.
+    """
+    user_settings = getattr(config.runner, "settings", None) or {}
+    if user_settings:
+        _deep_merge(settings, user_settings)
+
+
+def _setup_subagent_only_hook(workspace, config):
     """Set up SubagentStop hook without tool interception.
 
     When there are no inputs.tools, we still need the SubagentStop hook
@@ -369,6 +393,9 @@ def _setup_subagent_only_hook(workspace):
     from agent_eval.agent.stream_capture import setup_subagent_hook
     subagent_dir = str((workspace / "subagents").resolve())
     setup_subagent_hook(settings, subagent_dir)
+
+    # Apply user-provided runner.settings last so they can override defaults
+    _apply_runner_settings(settings, config)
 
     with open(settings_dir / "settings.json", "w") as f:
         _json.dump(settings, f, indent=2)
@@ -464,6 +491,9 @@ def _setup_tool_hooks(workspace, config):
     from agent_eval.agent.stream_capture import setup_subagent_hook
     subagent_dir = str((workspace / "subagents").resolve())
     setup_subagent_hook(settings, subagent_dir)
+
+    # Apply user-provided runner.settings last so they can override defaults
+    _apply_runner_settings(settings, config)
 
     with open(settings_dir / "settings.json", "w") as f:
         _json.dump(settings, f, indent=2)

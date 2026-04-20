@@ -1,6 +1,6 @@
 ---
 name: eval-analyze
-description: Analyze a skill and generate eval.yaml for evaluation. Deeply examines the skill's SKILL.md, sub-skills, scripts, and test cases to produce the full evaluation config — dataset schema, output descriptions, judges, and thresholds. Use this skill whenever someone wants to set up evaluation, test a skill, add quality checks, benchmark a skill, or just created a new skill and needs eval infrastructure. Also triggered automatically by /eval-run when eval.yaml is missing. Even if the user just says "how do I know if my skill is working?" — this is the right starting point.
+description: Analyze a skill and generate eval.yaml for the agent eval harness. Deeply examines the skill's SKILL.md, sub-skills, scripts, and test cases to produce the full evaluation config — execution mode, dataset schema, output descriptions, judges, models, and thresholds. Use this skill whenever someone wants to set up evaluation, test a skill, add quality checks, benchmark a skill, or just created a new skill and needs eval infrastructure. Also triggered automatically by /eval-run when eval.yaml is missing. Even if the user just says "how do I know if my skill is working?" — this is the right starting point.
 user-invocable: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
@@ -61,7 +61,7 @@ Then check if eval.md (the cached analysis) is still fresh — meaning the SKILL
 python3 ${CLAUDE_SKILL_DIR}/scripts/validate_eval.py memory eval.md
 ```
 
-If FRESH and eval.yaml has a non-empty `dataset.schema`, at least one `outputs` entry with a schema, and at least one judge, report that config is up to date and exit. No work needed. (An INCOMPLETE config with empty sections still needs analysis.)
+If FRESH and eval.yaml has a non-empty `dataset.schema`, at least one `outputs` entry with a schema, at least one judge, and `models.skill` set, report that config is up to date and exit. No work needed. (An INCOMPLETE config — empty sections, or missing `models.skill` from a pre-restructure eval.yaml — still needs analysis.)
 
 If STALE, NO_CONFIG, or `--update` was set, proceed to full analysis.
 
@@ -114,12 +114,15 @@ If no test cases exist, note this clearly and suggest running `/eval-dataset` to
 Combine the skill analysis (Step 3) and dataset exploration (Step 4) into a complete eval.yaml. Read the full template and writing guidance at `${CLAUDE_SKILL_DIR}/references/eval-yaml-template.md`.
 
 Key points:
-- **Execution mode**: determine from the skill analysis whether it expects a single input (`mode: case`) or a batch file (`mode: batch`). Look at `$ARGUMENTS` in the SKILL.md — if it takes one value (a key, prompt, or file path), use `case`. If it takes `--input <file>` with a YAML list, or has parallelism/batch-size controls, use `batch`. When in doubt, use `case`.
-- **Arguments template**: for `case` mode, build a template with `{field}` placeholders matching the input.yaml fields you observed in Step 4 (e.g., `"{strat_key} {adr_file?}"`). For `batch` mode, use the literal arguments string (e.g., `"--input batch.yaml --headless"`).
+- **Execution mode**: determine from the skill analysis whether it expects a single input (`execution.mode: case`) or a batch file (`execution.mode: batch`). Look at `$ARGUMENTS` in the SKILL.md — if it takes one value (a key, prompt, or file path), use `case`. If it takes `--input <file>` with a YAML list, or has parallelism/batch-size controls, use `batch`. When in doubt, use `case`.
+- **Arguments template**: under `execution.arguments`. For `case` mode, build a template with `{field}` placeholders matching the input.yaml fields you observed in Step 4 (e.g., `"{strat_key} {adr_file?}"`). For `batch` mode, use the literal arguments string (e.g., `"--input batch.yaml --headless"`).
+- **Runner**: `runner.type: claude-code` is the default and almost always correct. Only change it if the user has explicitly mentioned another harness.
+- **Models**: set `models.skill` to a sensible default (e.g., `claude-opus-4-7`) so the user doesn't need `--model` on every invocation. Set `models.judge` to the same or a comparable model — LLM and pairwise judges read it. CLI flags override.
+- **MLflow**: set `mlflow.experiment` to `<project>-eval` (or leave blank — it falls back to the top-level `name`).
 - The `dataset.schema` and `outputs[*].schema` fields drive the entire pipeline — be specific, reference actual file/field names you observed
 - If the skill uses AskUserQuestion, calls external services (MCP tools), or runs scripts that interact with APIs, add `inputs.tools` entries. Use `match` to describe what to intercept in natural language (e.g., "any Jira interaction via MCP or scripts"), and `prompt` for how to handle it.
 - Aim for 2-4 inline `check` judges + 1-2 LLM `prompt` judges. Start lean.
-- If `--update`: preserve everything already in the file, only add missing top-level keys
+- If `--update`: preserve everything already in the file, only add missing top-level keys (e.g., add a `models:` block if the user is upgrading from an older config that lacked it)
 
 ## Step 5b: Validate Generated Config
 
@@ -129,7 +132,7 @@ After writing eval.yaml, validate that all references are correct:
 python3 ${CLAUDE_SKILL_DIR}/scripts/validate_eval.py config <config>
 ```
 
-This checks dataset path exists, output paths are relative, judge prompt_file/context/module references resolve, and runner_options.settings exists.
+This checks dataset path exists, output paths are relative, judge prompt_file/context/module references resolve, and runner.settings exists.
 
 **Errors** (exit code 1): fix before proceeding — broken file references, absolute paths, missing modules.
 

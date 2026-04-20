@@ -6,7 +6,7 @@ This documents how `inputs.tools` handlers are resolved and executed during head
 
 1. **eval.yaml** defines handlers with `match` (what to intercept) and `prompt` (how to handle)
 2. **workspace.py** extracts basic tool name patterns from `match` text and writes `tool_handlers.yaml`
-3. **eval-run agent (Step 2b)** reads `tool_handlers.yaml`, interprets the `prompt` field, and adds concrete runtime checks
+3. **eval-run agent (Step 3b)** reads `tool_handlers.yaml`, interprets the `prompt` field, and adds concrete runtime checks
 4. **tools.py** (PreToolUse hook) executes the checks at runtime — no LLM needed during execution
 
 ## tool_handlers.yaml Format
@@ -39,8 +39,8 @@ case_overrides:
 |-------|--------|---------|---------|
 | `match` | workspace.py (from eval.yaml) | eval-run agent | Natural language description of what to intercept |
 | `patterns` | workspace.py (heuristic extraction) | tools.py | Tool name patterns for matching (exact or glob) |
-| `input_filters` | eval-run agent (Step 2b) | tools.py | Regex patterns to match Bash command content. When present with "Bash" in patterns, BOTH must match. |
-| `env_checks` | eval-run agent (Step 2b) | tools.py | Env var validation. Each key is a var name, `must_contain` lists required substrings. All must pass for the tool call to be allowed. |
+| `input_filters` | eval-run agent (Step 3b) | tools.py | Regex patterns to match Bash command content. When present with "Bash" in patterns, BOTH must match. |
+| `env_checks` | eval-run agent (Step 3b) | tools.py | Env var validation. Each key is a var name, `must_contain` lists required substrings. All must pass for the tool call to be allowed. |
 | `prompt` | workspace.py (from eval.yaml) | eval-run agent | Natural language instruction — the agent reads this to generate concrete checks |
 | `case_overrides` | eval-run agent (from dataset answers.yaml) | tools.py | Question → answer map for AskUserQuestion. Checked before auto-accept fallback. |
 
@@ -70,7 +70,7 @@ case_overrides:
 
 Tools with no matching handler pass through (exit 0, no interception).
 
-## What eval-run Agent Does in Step 2b
+## What eval-run Agent Does in Step 3b
 
 Read each handler in `tool_handlers.yaml` and resolve the `prompt` into concrete fields:
 
@@ -91,7 +91,7 @@ Read each handler in `tool_handlers.yaml` and resolve the `prompt` into concrete
   prompt: "Only allow if JIRA_SERVER points to a test instance or emulator."
 ```
 
-**After eval-run agent resolves** (Step 2b):
+**After eval-run agent resolves** (Step 3b):
 ```yaml
 - match: "Any Jira interaction via MCP or scripts calling the Jira API."
   patterns: ["Bash", "mcp__atlassian__*"]

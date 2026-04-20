@@ -80,8 +80,10 @@ skills/eval-optimize/    # Skill: automated refinement loop
 
 Skills projects create an `eval.yaml` config file with:
 - `skill` — skill to evaluate
-- `execution` — `mode` (`case` or `batch`) and `arguments` template with `{field}` placeholders
-- `runner` — agent runner (`claude-code`, etc.), `runner_options` for runner-specific settings
+- `execution` — `mode` (`case` or `batch`), `arguments` template with `{field}` placeholders, optional `timeout`/`max_budget_usd`
+- `runner` — `type` discriminator (`claude-code`, etc.) plus runner-specific `settings`/`plugin_dirs`/`env_strip`/`system_prompt`
+- `models` — defaults for `skill`/`subagent`/`judge` roles (CLI flags override)
+- `mlflow` — `experiment`, optional `tracking_uri`/`tags`
 - `permissions` — `allow`/`deny` tool patterns for headless execution
 - `dataset` — `path` to test cases directory, `schema` describing case structure in natural language
 - `inputs.tools` — tool interception for headless eval: `match` describes what to intercept, `prompt` how to handle it

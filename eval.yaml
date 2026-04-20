@@ -8,13 +8,28 @@ description: Evaluate the main skill pipeline
 
 # Skill to test
 skill: my-skill-name
-runner: claude-code   # Agent runner: claude-code, opencode, etc.
 
-# Execution — how the skill processes test cases
+# Execution — how the skill processes test cases (runner-agnostic)
 execution:
   mode: case              # per-case (default) or batch
-  arguments: "{prompt}"       # resolved per case from input.yaml fields
+  arguments: "{prompt}"   # resolved per case from input.yaml fields
   # For batch skills: mode: batch, arguments: "--input batch.yaml --headless"
+  # timeout: 3600         # Per-invocation wall-clock timeout (seconds)
+  # max_budget_usd: 5.0   # Per-invocation cost cap
+
+# Runner — agent harness + runner-specific knobs
+runner:
+  type: claude-code              # Discriminator: claude-code, opencode, etc.
+  # settings: {}                 # Claude Code settings overrides
+  # plugin_dirs: []              # Plugin dirs for sub-skills the evaluated skill calls
+  # env_strip: [JIRA_TOKEN]      # Env vars to remove
+  # system_prompt: ""            # Appended to harness system prompt
+
+# Models — defaults for each role (CLI flags override)
+models:
+  skill: claude-opus-4-7         # Required (or pass --model)
+  # subagent: claude-sonnet-4-7  # Defaults to skill model
+  judge: claude-opus-4-7         # Used by LLM and pairwise judges
 
 # Permissions — tool access during headless execution
 permissions:
@@ -22,15 +37,11 @@ permissions:
   deny:                # Tool patterns to block
     - "mcp__*"         # Block all MCP tools during eval
 
-# Runner-specific options (passed to the runner, ignored by others)
-runner_options:
-  settings: ""                   # Claude Code settings file
-  # plugin_dirs: []              # Plugin dirs for sub-skills the evaluated skill calls
-  # max_budget_usd: 5.0         # Per-case budget override
-  # env_strip: [JIRA_TOKEN]     # Env vars to remove
-
-# MLflow experiment name (optional — results logged here)
-mlflow_experiment: my-skill-eval
+# MLflow experiment (optional — results logged here)
+mlflow:
+  experiment: my-skill-eval
+  # tracking_uri: sqlite:///mlflow.db   # Override env var for self-contained runs
+  # tags: { team: ml }
 
 # Dataset — where test cases live and what they look like
 dataset:
@@ -139,7 +150,7 @@ judges:
   # - name: pairwise
   #   description: Compare two runs and pick the better output
   #   prompt_file: eval/prompts/comparison-judge.md
-  #   model: claude-sonnet-4-6
+  #   # model: claude-sonnet-4-7  # Optional override; default is models.judge
 
 # Thresholds for regression detection
 thresholds:

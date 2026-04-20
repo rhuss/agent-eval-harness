@@ -106,22 +106,35 @@ The harness uses natural language to describe evaluation datasets and skills inp
 name: my-skill-eval
 description: Evaluate the main skill pipeline
 skill: my-skill-name
-runner: claude-code
 
-# Execution — how the skill processes test cases
+# Execution — how the skill processes test cases (runner-agnostic)
 execution:
   mode: case              # case (default) or batch
   arguments: "{prompt}"   # resolved per case from input.yaml fields
+  # timeout: 3600
+  # max_budget_usd: 5.0
+
+# Runner — agent harness + runner-specific knobs
+runner:
+  type: claude-code
+  # settings: {}
+  # plugin_dirs: []
+  # env_strip: [JIRA_TOKEN]
+
+# Models — defaults for each role (CLI flags override)
+models:
+  skill: claude-opus-4-7
+  judge: claude-opus-4-7
+
+# MLflow logging target (optional)
+mlflow:
+  experiment: my-skill-eval
 
 # Permissions — tool access during headless execution
 permissions:
   allow: []            # Tool patterns to allow (empty = all)
   deny:
     - "mcp__*"         # Block MCP tools during eval
-
-# Runner-specific options
-runner_options:
-  settings: ""         # Claude Code settings file
 
 # Dataset — where test cases live and what they look like
 dataset:
@@ -222,7 +235,7 @@ judges:
   # - name: pairwise
   #   description: Compare two runs and pick the better output
   #   prompt_file: eval/prompts/comparison-judge.md
-  #   model: claude-sonnet-4-6
+  #   # model: <model-id>   # Optional override; default is models.judge
 
 # Thresholds for regression detection
 thresholds:
@@ -242,18 +255,25 @@ thresholds:
 - **`context`** — list of file paths loaded and appended to the LLM judge prompt as supplementary material (rubrics, guidelines, examples).
 - **`module`** / **`function`** — external Python code judge for complex validation.
 - **`permissions`** — tool access patterns (`allow`/`deny`) for headless execution. Generic across runners — each runner translates to its platform's mechanism.
-- **`runner_options`** — runner-specific settings (e.g., `settings`, `max_budget_usd` for Claude Code). Ignored by other runners.
+- **`runner`** — `type` discriminator selects the runner implementation; remaining fields (`settings`, `plugin_dirs`, `env_strip`, `system_prompt`) are runner-specific and ignored by other runners.
+- **`models`** — `skill`/`subagent`/`judge` defaults, overridable per-judge or via CLI flags.
+- **`mlflow`** — `experiment` (and optional `tracking_uri`/`tags`) for result logging.
 
 ## Example: eval.yaml for RFE Creator
 
 ```yaml
 name: rfe-creator
 skill: rfe.speedrun
-runner: claude-code
 execution:
   mode: batch
   arguments: "--input batch.yaml --headless --dry-run"
-mlflow_experiment: rfe-eval
+runner:
+  type: claude-code
+models:
+  skill: claude-opus-4-7
+  judge: claude-opus-4-7
+mlflow:
+  experiment: rfe-eval
 permissions:
   deny: ["mcp__atlassian__*"]  # Block Jira writes during eval
 

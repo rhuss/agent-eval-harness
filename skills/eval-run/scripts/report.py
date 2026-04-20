@@ -750,7 +750,9 @@ def _render_scoring_summary(summary, config, baseline_summary=None):
 
     # Build judge type/model lookup from config
     judge_info = {}
-    default_model = os.environ.get("EVAL_JUDGE_MODEL", "claude-sonnet-4-6@20250514")
+    default_model = (config.get("models", {}).get("judge")
+                     or os.environ.get("EVAL_JUDGE_MODEL")
+                     or "—")
     for jc in config.get("judges", []):
         jname = jc.get("name", "")
         if jc.get("check"):

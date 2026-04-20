@@ -44,21 +44,29 @@ def main():
     parser.add_argument("--skill", required=True)
     parser.add_argument("--skill-args", default=None,
                         help="Skill arguments (default: from eval.yaml execution.arguments)")
-    parser.add_argument("--model", required=True)
+    parser.add_argument("--model", default=None,
+                        help="Skill model (default: from eval.yaml models.skill)")
     parser.add_argument("--output", required=True)
     parser.add_argument("--config", default="eval.yaml",
-                        help="Path to eval.yaml (for permissions and runner_options)")
+                        help="Path to eval.yaml")
     parser.add_argument("--agent", default=None,
-                        help="Agent runner override (default: from config)")
+                        help="Agent runner override (default: from runner.type)")
     parser.add_argument("--subagent-model", default=None)
     parser.add_argument("--max-budget", type=float, default=None)
     parser.add_argument("--timeout", type=int, default=None)
     parser.add_argument("--mlflow-experiment", default=None)
     args = parser.parse_args()
 
-    # Load config for permissions and runner_options
     from agent_eval.config import EvalConfig
     config = EvalConfig.from_yaml(args.config)
+
+    # Resolve model: CLI > config; required to be set somewhere.
+    model = args.model or config.models.skill
+    if not model:
+        print("ERROR: no model specified. Set --model or models.skill in eval.yaml.",
+              file=sys.stderr)
+        sys.exit(1)
+    subagent_model = args.subagent_model or config.models.subagent or model
 
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -79,30 +87,39 @@ def main():
                 skill_args = skill_args.replace("{prompt}", prompt_text.strip())
 
     # Build runner
-    agent = args.agent or config.runner
+    agent = args.agent or config.runner.type
     if agent not in RUNNERS:
         print(f"ERROR: unknown runner '{agent}'. Available: {list(RUNNERS.keys())}",
               file=sys.stderr)
         sys.exit(1)
     runner_cls = RUNNERS[agent]
 
+    mlflow_experiment = args.mlflow_experiment or config.mlflow.experiment
+
     runner = runner_cls(
         permissions=config.permissions,
-        runner_options=config.runner_options,
-        subagent_model=args.subagent_model,
-        mlflow_experiment=args.mlflow_experiment,
+        plugin_dirs=config.runner.plugin_dirs,
+        env_strip=config.runner.env_strip,
+        system_prompt=config.runner.system_prompt,
+        subagent_model=subagent_model,
+        mlflow_experiment=mlflow_experiment,
+        mlflow_tracking_uri=config.mlflow.tracking_uri,
         log_prefix="eval",
     )
 
-    # Resolve timeout and budget: CLI override > runner_options > defaults
-    opts = config.runner_options or {}
-    timeout_s = args.timeout or opts.get("timeout", 3600)
-    max_budget = args.max_budget or opts.get("max_budget_usd", 100.0)
+    # Resolve timeout and budget: CLI override > config > defaults.
+    # Use explicit None checks so that 0 is preserved (an operator who
+    # passes --timeout 0 or sets max_budget_usd: 0 in the config gets
+    # exactly that, not the default).
+    timeout_s = (args.timeout if args.timeout is not None
+                 else config.execution.timeout if config.execution.timeout is not None
+                 else 3600)
+    max_budget = (args.max_budget if args.max_budget is not None
+                  else config.execution.max_budget_usd if config.execution.max_budget_usd is not None
+                  else 100.0)
 
-    # Compose system prompt: runner_options.system_prompt (if any) + harness prompt.
-    existing_prompt = ""
-    if isinstance(config.runner_options, dict):
-        existing_prompt = str(config.runner_options.get("system_prompt", "")).strip()
+    # Compose system prompt: runner.system_prompt (if any) + harness prompt.
+    existing_prompt = (config.runner.system_prompt or "").strip()
     system_prompt = "\n\n".join(p for p in [existing_prompt, _HARNESS_SYSTEM_PROMPT] if p)
 
     # Capture user-facing eval parameters that defined this run, for the report.
@@ -111,20 +128,22 @@ def main():
     # ── Per-case execution ───────────────────────────────────────
     if config.execution.mode == "case":
         _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
-                          system_prompt, skill_args_template=skill_args,
+                          model, mlflow_experiment, system_prompt,
+                          skill_args_template=skill_args,
                           eval_params=eval_params)
         return
 
     # ── Batch execution (below) ──────────────────────────────────
     print(f"Executing: /{args.skill} {skill_args}", file=sys.stderr)
-    print(f"Agent: {runner.name} | Model: {args.model}", file=sys.stderr)
+    print(f"Agent: {runner.name} | Model: {model}", file=sys.stderr)
     print(f"Workspace: {args.workspace}", file=sys.stderr)
 
     # Set MLflow environment in the workspace settings
-    if args.mlflow_experiment:
+    if mlflow_experiment:
         from agent_eval.mlflow.experiment import inject_tracing_env
         inject_tracing_env(args.workspace, project_root=Path.cwd(),
-                           experiment_name=args.mlflow_experiment)
+                           tracking_uri=config.mlflow.tracking_uri,
+                           experiment_name=mlflow_experiment)
 
     workspace_settings = Path(args.workspace) / ".claude" / "settings.json"
     settings_path = workspace_settings if workspace_settings.exists() else None
@@ -134,14 +153,14 @@ def main():
         skill_name=args.skill,
         args=skill_args,
         workspace=Path(args.workspace),
-        model=args.model,
+        model=model,
         settings_path=settings_path,
         system_prompt=system_prompt,
         max_budget_usd=max_budget,
         timeout_s=timeout_s,
     )
 
-    _save_result(result, args, output_dir, runner, eval_params=eval_params)
+    _save_result(result, args, output_dir, runner, model, eval_params=eval_params)
     sys.exit(result.exit_code)
 
 
@@ -199,7 +218,8 @@ def _build_eval_params(args, config, skill_args, max_budget, timeout_s):
 
 
 def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
-                      system_prompt="", skill_args_template=None, eval_params=None):
+                      model, mlflow_experiment, system_prompt="",
+                      skill_args_template=None, eval_params=None):
     """Execute the skill once per case with case-specific arguments.
 
     `skill_args_template` is the resolved invocation pattern (CLI override
@@ -223,7 +243,7 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
 
     print(f"Executing: /{args.skill} (per-case, {len(case_order)} cases)",
           file=sys.stderr)
-    print(f"Agent: {runner.name} | Model: {args.model}", file=sys.stderr)
+    print(f"Agent: {runner.name} | Model: {model}", file=sys.stderr)
 
     case_results = {}
     worst_exit = 0
@@ -246,10 +266,11 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
                 case_args = _resolve_arguments(case_args, case_data)
 
         # Set MLflow environment per case workspace
-        if args.mlflow_experiment:
+        if mlflow_experiment:
             from agent_eval.mlflow.experiment import inject_tracing_env
             inject_tracing_env(str(case_ws), project_root=Path.cwd(),
-                               experiment_name=args.mlflow_experiment)
+                               tracking_uri=config.mlflow.tracking_uri,
+                               experiment_name=mlflow_experiment)
 
         case_settings = case_ws / ".claude" / "settings.json"
         settings_path = case_settings if case_settings.exists() else None
@@ -261,7 +282,7 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
             skill_name=args.skill,
             args=case_args,
             workspace=case_ws,
-            model=args.model,
+            model=model,
             settings_path=settings_path,
             system_prompt=system_prompt,
             max_budget_usd=max_budget,
@@ -313,7 +334,7 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
         "duration_s": round(total_duration, 1),
         "cost_usd": round(total_cost, 2),
         "num_cases": len(case_results),
-        "model": args.model,
+        "model": model,
         "agent": runner.name,
         "agent_version": getattr(runner, "version", ""),
         "execution_mode": "case",
@@ -334,7 +355,7 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
     sys.exit(worst_exit)
 
 
-def _save_result(result, args, output_dir, runner, eval_params=None):
+def _save_result(result, args, output_dir, runner, model, eval_params=None):
     """Save batch execution results (stdout, stderr, run_result.json)."""
     if result.stdout:
         (output_dir / "stdout.log").write_text(result.stdout)
@@ -352,7 +373,7 @@ def _save_result(result, args, output_dir, runner, eval_params=None):
             if f.is_file() and not f.is_symlink() and f.suffix == ".jsonl":
                 shutil.copy2(f, out_subagents / f.name)
 
-    full_model = result.resolved_model or args.model
+    full_model = result.resolved_model or model
     models_used = result.models_used or []
     subagent_models = [m for m in models_used if m != full_model]
     subagent_model_str = ", ".join(subagent_models) if subagent_models else full_model
