@@ -568,43 +568,62 @@ def _call_judge(client, system_prompt, user_message, model, max_tokens=8192):
             ],
         )
         text = response.content[0].text
-        # Try extracting JSON from code blocks first
-        if "```json" in text:
-            json_text = text.split("```json")[1].split("```")[0]
-        elif "```" in text:
-            json_text = text.split("```")[1].split("```")[0]
-        else:
-            json_text = text
-        try:
-            return json.loads(json_text.strip()), None
-        except json.JSONDecodeError:
-            # Fallback: extract outermost JSON object containing "preferred"
-            # Walk the text to find balanced braces
-            for start in range(len(text)):
-                if text[start] != "{":
-                    continue
-                depth = 0
-                for end in range(start, len(text)):
-                    if text[end] == "{":
-                        depth += 1
-                    elif text[end] == "}":
-                        depth -= 1
-                    if depth == 0:
-                        candidate = text[start:end + 1]
-                        if '"preferred"' in candidate:
-                            try:
-                                return json.loads(candidate), None
-                            except json.JSONDecodeError:
-                                pass
-                        break
-            # Retry once with a larger budget if the response was truncated.
-            if response.stop_reason == "max_tokens" and max_tokens < 16384:
-                return _call_judge(client, system_prompt, user_message, model,
-                                   max_tokens=max_tokens * 2)
-            return None, (f"Could not parse JSON from response "
-                          f"(stop_reason={response.stop_reason}): {text[:200]}")
+        parsed = _extract_judge_json(text)
+        if parsed is not None:
+            return parsed, None
+        # Retry once with a larger budget if the response was truncated.
+        if response.stop_reason == "max_tokens" and max_tokens < 16384:
+            return _call_judge(client, system_prompt, user_message, model,
+                               max_tokens=max_tokens * 2)
+        return None, (f"Could not parse JSON from response "
+                      f"(stop_reason={response.stop_reason}): {text[:200]}")
     except Exception as e:
         return None, str(e)
+
+
+def _extract_judge_json(text):
+    """Extract a JSON object containing 'preferred' from a judge response."""
+    # strict=False allows unescaped control characters (e.g. literal newlines)
+    # inside strings — judges often format their reasoning with real newlines.
+    def _loads(s):
+        return json.loads(s, strict=False)
+
+    # Try code blocks first.
+    if "```json" in text:
+        json_text = text.split("```json")[1].split("```")[0]
+    elif "```" in text:
+        json_text = text.split("```")[1].split("```")[0]
+    else:
+        json_text = text
+    try:
+        return _loads(json_text.strip())
+    except json.JSONDecodeError:
+        pass
+    # Fallback: extract the outermost balanced JSON object containing "preferred".
+    for start in range(len(text)):
+        if text[start] != "{":
+            continue
+        depth = 0
+        for end in range(start, len(text)):
+            if text[end] == "{":
+                depth += 1
+            elif text[end] == "}":
+                depth -= 1
+            if depth == 0:
+                candidate = text[start:end + 1]
+                if '"preferred"' in candidate:
+                    try:
+                        return _loads(candidate)
+                    except json.JSONDecodeError:
+                        pass
+                break
+    # Last-resort recovery: judge wrote a partial/unclosed JSON object but the
+    # top-level "preferred" verdict is still extractable. Lose the rationale,
+    # keep the verdict — better than counting the case as an error.
+    m = re.search(r'"preferred"\s*:\s*"(A|B|tie)"', text)
+    if m:
+        return {"preferred": m.group(1)}
+    return None
 
 
 # ---------------------------------------------------------------------------
