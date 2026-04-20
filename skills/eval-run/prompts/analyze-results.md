@@ -6,7 +6,11 @@ You will be given:
 1. The scoring summary (pass/fail per judge, aggregate metrics)
 2. Per-case results (which cases passed/failed which judges)
 3. The skill being evaluated (what it does)
-4. Optionally: a baseline comparison (what changed vs previous run)
+4. Run metrics (`summary.yaml.run_metrics`): workload-agnostic cost figures — `cost_per_turn_usd`, `output_tokens_per_turn`, `cache_hit_rate`, `cost_per_mtok_usd`. Stable across runs of the same model + effort.
+5. Run result (`run_result.json`): headline cost, duration, turns, token usage, model, effort.
+6. Collection summary (`collection.json`): per-case artifact counts — the actual output volumes the skill produced.
+7. Eval config (`eval.yaml`): in particular the `outputs` block, which describes what artifacts the skill is expected to produce.
+8. Optionally: a baseline comparison (what changed vs previous run)
 
 ## Analysis Framework
 
@@ -31,6 +35,25 @@ For each failure pattern, hypothesize WHY:
 - What got worse? (new failures that weren't in baseline)
 - What got better? (failures in baseline that now pass)
 - Is the regression concentrated in specific cases or judges?
+
+### 4b. Cost Attribution
+
+The headline cost (`cost_usd` in `run_result.json`) mixes two independent effects:
+- **Model/runner cost** — how much each turn or token costs. Surfaced in `run_metrics`: `cost_per_turn_usd`, `cost_per_mtok_usd`, `cache_hit_rate`. These stay flat across runs of the same model + effort, so any drift here is a model, runner-version, or effort change — **not** the skill doing different work.
+- **Workload cost** — how much work the skill did. Stochastic per run: more revisions, splits, retries, or fan-out subagents → higher cost without any model/runner change.
+
+Attribute the gap by deriving a **skill-specific cost-per-unit-of-work** metric on the fly:
+
+1. Read `eval.yaml.outputs` to identify what units the skill produces (each entry has a `path` and a `schema` describing the artifact). Pick the 1–2 most meaningful units — typically the primary artifact the skill is designed to create, and, if the skill produces variable side-effects, a denominator that captures fan-out (subagent transcripts under `subagents/`, items inside per-run reports the skill writes, etc.).
+2. Pull actual production counts from `collection.json` (per-case artifact counts), from per-run report files the skill emits, or by listing the artifact directories. Sum across cases.
+3. Compute `cost_usd / unit_count` for each candidate normalizer, both for the current run and the baseline.
+4. Compare the deltas:
+   - `run_metrics` flat AND `cost_per_unit` flat → no real cost change; headline gap is workload variance only.
+   - `run_metrics` flat AND `cost_per_unit` shifted → cost change is real and skill-attributable (efficiency drifted).
+   - `run_metrics` shifted → model/runner/effort changed; subtract that effect before judging the skill.
+
+State the attribution explicitly. Template:
+> "Cost rose X% headline, but `cost_per_<unit>` only rose Y% and `cost_per_turn` is flat — the gap is mostly N extra `<units>` from <stochastic cause>, not skill or model regression."
 
 ### 5. Recommendations
 Prioritize by impact:
@@ -75,6 +98,10 @@ Lead with `## Recommendation` so readers see the call-to-action before the suppo
 ## Regressions
 
 [If `--baseline` was provided: what got worse, what got better, where the change is concentrated. Omit if no baseline.]
+
+## Cost Attribution
+
+[Show the workload-agnostic deltas (`cost_per_turn_usd`, `cost_per_mtok_usd`, `cache_hit_rate`) alongside one or two skill-specific cost-per-unit metrics derived from `eval.yaml.outputs` and `collection.json`. State whether the headline cost is model/runner/effort-driven, workload-driven, or skill-efficiency-driven — or whether all three are flat (which is itself worth confirming). When comparing different models, this is the section that makes pricing tradeoffs legible.]
 ```
 
 Use tables for per-case data. Be decisive — don't hedge with "might" or "could be". State your assessment and the evidence supporting it. The Recommendation section is the only thing many readers will see, so make it self-contained — it should land even without the supporting sections below.

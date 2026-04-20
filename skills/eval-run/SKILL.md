@@ -238,7 +238,8 @@ Read the summary and analyze the results. Use the framework in `${CLAUDE_SKILL_D
 2. **Failure patterns** — are failures clustered by case (bad input?) or by judge (systematic skill issue)?
 3. **Regressions** — if baseline provided, what got worse? What got better?
 4. **Root cause hypotheses** — based on the failures, what might be wrong in the skill? Be specific — reference actual judge names and case IDs.
-5. **Recommendation** — synthesize the above into a headline verdict + 2–4 prioritized actions tagged CRITICAL (blocks usage) / HIGH (systematic) / MEDIUM (edge cases) / LOW (nice-to-have).
+5. **Cost attribution** — split the headline cost into model/runner/effort drivers (using `summary.yaml.run_metrics`) vs workload drivers (using `eval.yaml.outputs` + `collection.json` to derive a skill-specific `cost_per_<unit>`). State which is responsible for any gap vs baseline. See section 4b in the framework prompt.
+6. **Recommendation** — synthesize the above into a headline verdict + 2–4 prioritized actions tagged CRITICAL (blocks usage) / HIGH (systematic) / MEDIUM (edge cases) / LOW (nice-to-have).
 
 Be decisive — state assessments, not hedges. "The skill fails to produce reviews for cases with long inputs" is better than "there might be an issue with some cases."
 
@@ -256,7 +257,7 @@ date: <UTC ISO 8601>     # e.g. 2026-04-17T14:32:11Z
 EOF
 ```
 
-Write the analysis body as markdown with these sections in order: `## Recommendation` (verdict + top actions), `## Summary` (aggregate scores, run metrics), `## Failure Patterns`, `## Root Causes`, `## Regressions` (only if `--baseline` was provided). The Recommendation must be self-contained — many readers will only read that section. This file is rendered as a prominent callout near the top of the HTML report; the frontmatter is consumed by the report renderer and not displayed verbatim.
+Write the analysis body as markdown with these sections in order: `## Recommendation` (verdict + top actions), `## Summary` (aggregate scores, run metrics), `## Failure Patterns`, `## Root Causes`, `## Regressions` (only if `--baseline` was provided), `## Cost Attribution` (always — cite `run_metrics` plus a derived `cost_per_<unit>`). The Recommendation must be self-contained — many readers will only read that section. This file is rendered as a prominent callout near the top of the HTML report; the frontmatter is consumed by the report renderer and not displayed verbatim.
 
 **Generate HTML report**:
 
