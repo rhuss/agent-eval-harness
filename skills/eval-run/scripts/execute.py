@@ -375,7 +375,15 @@ def _save_result(result, args, output_dir, runner, model, eval_params=None):
 
     full_model = result.resolved_model or model
     models_used = result.models_used or []
-    subagent_models = [m for m in models_used if m != full_model]
+    # Claude Code annotates the parent model with bracketed suffixes like
+    # "[1m]" (the 1M-context variant), but server-side per-message model
+    # fields drop the suffix. Compare on the base name so subagents using
+    # the same effective model don't get flagged as a distinct subagent.
+    def _base(name):
+        i = name.find("[")
+        return name[:i] if i >= 0 else name
+    full_base = _base(full_model)
+    subagent_models = [m for m in models_used if _base(m) != full_base]
     subagent_model_str = ", ".join(subagent_models) if subagent_models else full_model
 
     run_meta = {
