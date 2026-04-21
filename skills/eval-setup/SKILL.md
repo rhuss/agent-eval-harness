@@ -1,13 +1,13 @@
 ---
 name: eval-setup
-description: Set up the evaluation environment for the agent-eval-harness. Verifies dependencies, configures MLflow tracking and tracing, checks API keys, and creates directory structure. Use when getting started with evaluation, when dependencies are missing, when /eval-run fails with import errors, or when the user says "set up eval", "configure evaluation", "install dependencies", or "how do I get started testing my skill". Run once per project.
+description: Set up the evaluation environment for the agent-eval-harness. Verifies dependencies, configures MLflow tracking and tracing, checks API keys, and creates directory structure. Use when getting started with evaluation, when dependencies are missing, when /eval-run fails with import errors, or when the user says "set up eval", "configure evaluation", "install dependencies", or "how do I get started testing my skill". Also triggers on "ModuleNotFoundError", "No module named agent_eval", "can't import agent_eval", "mlflow not installed", "missing dependencies", or "pip install agent-eval". Run once per project.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, AskUserQuestion
 ---
 
 You are an environment configurator. You ensure the evaluation harness is ready to run — dependencies installed, API keys set, MLflow configured, directories created. Non-destructive: skip steps that are already done, report status.
 
-After setup, the pipeline is: `/eval-analyze` → `/eval-dataset` → `/eval-run` → `/eval-review` or `/eval-optimize`. `/eval-mlflow` can be invoked at any point after `/eval-run` to log results, sync datasets, or push/pull feedback — `/eval-run` already auto-logs results when `mlflow.experiment` is set in eval.yaml.
+After setup, the pipeline is: `/eval-analyze` → `/eval-dataset` → `/eval-run` → `/eval-review` or `/eval-optimize`. `/eval-mlflow` can be invoked at any point after `/eval-run` to log results, sync datasets, or push/pull feedback — `/eval-run` already auto-logs results when `mlflow.experiment` is set in eval.yaml. MLflow tracing is handled by `/eval-mlflow` after a run completes — it builds traces from stdout logs and logs them to MLflow. No tracing setup is needed here.
 
 ## Step 0: Parse Arguments
 
@@ -19,37 +19,43 @@ Parse `$ARGUMENTS` for:
 | `--skip-mlflow` | no | false | Skip MLflow setup entirely |
 | `--runs-dir <path>` | no | `eval/runs` | Directory where eval runs are stored |
 
-## Step 1: Run Preflight Checks
+## Step 1: Install Dependencies
+
+The `agent_eval` package is available to skill scripts via symlinks — no pip install needed for it. Only third-party dependencies need to be installed.
+
+Check what's missing:
+
+```bash
+python3 -c "import yaml; print('pyyaml: OK')" 2>&1 || echo "pyyaml: MISSING"
+```
+
+Install pyyaml if missing:
+
+```bash
+pip install 'pyyaml>=6.0'
+```
+
+If `--skip-mlflow` was NOT passed, also install mlflow:
+
+```bash
+pip install 'mlflow[genai]>=3.5'
+```
+
+For LLM judges and pairwise comparison (optional):
+
+```bash
+pip install 'anthropic[vertex]>=0.40'
+```
+
+## Step 2: Run Preflight Checks
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/check_env.py --fix
 ```
 
-Review the output. If all checks pass, report success and skip to Step 7.
+Review the output. If all checks pass, report success and skip to Step 6.
 
-If checks fail, work through the following steps to fix them.
-
-## Step 2: Install Missing Dependencies
-
-If mlflow or other dependencies are missing:
-
-```bash
-pip install 'mlflow[genai]>=3.5' 'pyyaml>=6.0'
-```
-
-For pairwise comparison support (optional):
-
-```bash
-pip install 'anthropic>=0.40'
-```
-
-Also verify the eval harness itself is installed:
-
-```bash
-python3 -c "from agent_eval.config import EvalConfig; print('agent_eval: OK')" || echo "agent_eval not installed — run: pip install -e /path/to/agent-eval-harness"
-```
-
-If `agent_eval` is not importable, tell the user to install it. The harness scripts won't work without it.
+If checks fail, work through Steps 3–5 to fix them.
 
 ## Step 3: Configure MLflow Tracking
 
@@ -118,11 +124,7 @@ export AGENT_EVAL_RUNS_DIR=<path>
 
 All harness scripts read this env var. The directory is created automatically by `check_env.py --fix`.
 
-## Step 6: MLflow Tracing (Automatic)
-
-Tracing is configured automatically — `/eval-run` injects the MLflow Stop hook into each eval workspace's `.claude/settings.json` before executing the skill. No setup needed here, and the outer project's settings are never modified.
-
-## Step 7: Create MLflow Experiment
+## Step 6: Create MLflow Experiment
 
 If `--skip-mlflow` was passed, skip this step.
 
@@ -135,7 +137,7 @@ test -f eval.yaml && echo "CONFIG_EXISTS" || echo "NO_CONFIG"
 If eval.yaml exists:
 
 ```bash
-python3 -c "
+PYTHONPATH=${CLAUDE_SKILL_DIR}/scripts python3 -c "
 from agent_eval.config import EvalConfig
 from agent_eval.mlflow.experiment import setup_experiment, resolve_tracking_uri
 config = EvalConfig.from_yaml('eval.yaml')
@@ -149,7 +151,7 @@ else:
 
 If eval.yaml doesn't exist, skip this step — it will be created by `/eval-analyze`.
 
-## Step 8: Final Verification
+## Step 7: Final Verification
 
 Run the preflight checks again to confirm everything is set up:
 
