@@ -1,13 +1,15 @@
 ---
 name: eval-setup
-description: Set up the evaluation environment for the agent-eval-harness. Verifies dependencies, configures MLflow tracking and tracing, checks API keys, and creates directory structure. Use when getting started with evaluation, when dependencies are missing, when /eval-run fails with import errors, or when the user says "set up eval", "configure evaluation", "install dependencies", or "how do I get started testing my skill". Also triggers on "ModuleNotFoundError", "No module named agent_eval", "can't import agent_eval", "mlflow not installed", "missing dependencies", or "pip install agent-eval". Run once per project.
+description: Optional environment configurator for the agent-eval-harness. Configures MLflow tracking, verifies API keys, and troubleshoots dependency issues. Not required for basic usage — dependencies auto-install via SessionStart hook and agent_eval is available via symlinks. Use when the user wants to configure MLflow tracking, troubleshoot import errors, verify the environment, or set up a remote MLflow server. Also triggers on "configure mlflow", "set up tracking", "ModuleNotFoundError", "mlflow not installed", "missing dependencies", or "check my eval environment".
 user-invocable: true
 allowed-tools: Read, Bash, Glob, AskUserQuestion
 ---
 
-You are an environment configurator. You ensure the evaluation harness is ready to run — dependencies installed, API keys set, MLflow configured, directories created. Non-destructive: skip steps that are already done, report status.
+You are an environment configurator. You verify the evaluation harness environment and configure optional integrations like MLflow. Non-destructive: skip steps that are already done, report status.
 
-After setup, the pipeline is: `/eval-analyze` → `/eval-dataset` → `/eval-run` → `/eval-review` or `/eval-optimize`. `/eval-mlflow` can be invoked at any point after `/eval-run` to log results, sync datasets, or push/pull feedback — `/eval-run` already auto-logs results when `mlflow.experiment` is set in eval.yaml. MLflow tracing is handled by `/eval-mlflow` after a run completes — it builds traces from stdout logs and logs them to MLflow. No tracing setup is needed here.
+Most users can skip this skill entirely — dependencies auto-install via the plugin's SessionStart hook, and `agent_eval` is available to scripts via symlinks. This skill is useful for configuring MLflow tracking, troubleshooting dependency issues, or verifying the environment.
+
+The eval pipeline is: `/eval-analyze` → `/eval-dataset` → `/eval-run` → `/eval-review` or `/eval-optimize`. `/eval-mlflow` can be invoked at any point after `/eval-run`. MLflow tracing is handled by `/eval-mlflow` after a run completes. No tracing setup is needed here.
 
 ## Step 0: Parse Arguments
 
@@ -19,9 +21,9 @@ Parse `$ARGUMENTS` for:
 | `--skip-mlflow` | no | false | Skip MLflow setup entirely |
 | `--runs-dir <path>` | no | `eval/runs` | Directory where eval runs are stored |
 
-## Step 1: Install Dependencies
+## Step 1: Install Dependencies (if needed)
 
-The `agent_eval` package is available to skill scripts via symlinks — no pip install needed for it. Only third-party dependencies need to be installed.
+Dependencies are normally auto-installed by the plugin's SessionStart hook. This step is a fallback for mid-session installs or troubleshooting.
 
 Check what's missing:
 
