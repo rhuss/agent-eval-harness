@@ -94,11 +94,19 @@ class ExecutionConfig:
     Constraints:
     - timeout: subprocess wall-clock timeout in seconds (None = harness default).
     - max_budget_usd: per-invocation cost cap (None = no cap).
+
+    Environment:
+    - env: extra environment variables injected into each case workspace's
+      .claude/settings.json.  Available to both the skill and its hooks.
+      Values starting with ``$`` are resolved from the caller's environment
+      (e.g., ``$JIRA_TOKEN`` → ``os.environ["JIRA_TOKEN"]``).  Missing
+      vars are silently omitted.  Literal values are passed through as-is.
     """
     mode: str = "case"
     arguments: str = ""
     timeout: Optional[int] = None
     max_budget_usd: Optional[float] = None
+    env: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -244,6 +252,7 @@ class EvalConfig:
             arguments=exec_raw.get("arguments", ""),
             timeout=exec_raw.get("timeout"),
             max_budget_usd=exec_raw.get("max_budget_usd"),
+            env=exec_raw.get("env") or {},
         )
 
         # Runner config (block form)
