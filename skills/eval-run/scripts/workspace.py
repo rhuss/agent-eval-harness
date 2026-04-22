@@ -472,8 +472,11 @@ def _setup_tool_hooks(workspace, config):
         hook_matchers.update(patterns)
 
     # Write tool_handlers.yaml
+    handler_data = {"handlers": handlers}
+    if config.models.hook:
+        handler_data["hook_model"] = config.models.hook
     with open(workspace / "tool_handlers.yaml", "w") as f:
-        yaml.dump({"handlers": handlers}, f, default_flow_style=False)
+        yaml.dump(handler_data, f, default_flow_style=False)
 
     # Copy interceptor script
     hooks_dir = workspace / "hooks"

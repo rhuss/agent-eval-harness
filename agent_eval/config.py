@@ -156,6 +156,7 @@ class ModelsConfig:
     skill: Optional[str] = None
     subagent: Optional[str] = None
     judge: Optional[str] = None
+    hook: Optional[str] = None
 
 
 @dataclass
@@ -273,6 +274,7 @@ class EvalConfig:
             skill=models_raw.get("skill"),
             subagent=models_raw.get("subagent"),
             judge=models_raw.get("judge"),
+            hook=models_raw.get("hook"),
         )
 
         # MLflow block. Experiment defaults to the eval's top-level
