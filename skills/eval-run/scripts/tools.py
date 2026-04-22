@@ -109,6 +109,11 @@ def _handle_ask_user(tool_input, config, handler):
     case_overrides = config.get("case_overrides", {})
     hook_model = config.get("hook_model")
     prompt = handler.get("prompt", "")
+    if not prompt and handler.get("prompt_file"):
+        try:
+            prompt = Path(handler["prompt_file"]).read_text()
+        except OSError:
+            pass
     answers = {}
     for q in tool_input.get("questions", []):
         text = q.get("question", "")
@@ -179,10 +184,11 @@ Reply with ONLY the option label text, nothing else."""
 
     try:
         import anthropic
-        client = anthropic.Anthropic()
+        client = anthropic.Anthropic(timeout=30.0)
         response = client.messages.create(
             model=model or "claude-haiku-4-5-20251001",
             max_tokens=256,
+            temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
         answer = response.content[0].text.strip()
