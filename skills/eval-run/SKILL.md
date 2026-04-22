@@ -109,14 +109,14 @@ Read `${CLAUDE_SKILL_DIR}/references/tool-interception.md` for the full format a
 
 1. Read the `match` and `prompt` fields
 2. Resolve the `prompt` into concrete runtime checks:
-   - **For AskUserQuestion**: load per-case answers from dataset `answers.yaml` files into `case_overrides`. If the dataset has none, the auto-accept fallback (first option / "yes") is fine.
+   - **For AskUserQuestion**: the hook uses 3-tier answer resolution — (1) exact match from `case_overrides`, (2) LLM call using `models.hook` with the handler `prompt` + case context (`input.yaml`, `answers.yaml`), (3) fallback to first option. If the dataset has `answers.yaml` files with guidance for domain-specific questions (e.g., `dedup_guidance: "this is a duplicate"`), the LLM answerer uses that context. If no `answers.yaml` exists, the LLM still uses `input.yaml` context + the handler prompt. Only add `case_overrides` for questions that need exact deterministic answers.
    - **For service interception** (Jira, Slack, etc.): add `env_checks` (which env vars to validate) and `input_filters` (regex patterns for Bash command content). For Bash this is required, not optional.
    - **For blocking**: explicit MCP patterns (e.g. `mcp__atlassian__*`) deny by default once matched; just confirm the patterns are right.
 3. Write the updated handler back to `tool_handlers.yaml`
 
 Before continuing to Step 4, sanity-check: every `Bash` pattern has matching `input_filters`, and every non-Bash handler either has `env_checks` or is intended to deny by default.
 
-The hook script (`tools.py`) uses these concrete checks at runtime — no LLM needed during execution.
+The hook script (`tools.py`) uses these concrete checks at runtime. AskUserQuestion calls use the `models.hook` LLM for context-aware answers; all other checks are deterministic.
 
 ## Step 4: Execute Skill
 
@@ -210,8 +210,9 @@ Judges receive a record dict with:
 - **Execution metadata**: `outputs["exit_code"]`, `outputs["duration_s"]`, `outputs["cost_usd"]`, `outputs["num_turns"]` (if `traces.metrics` enabled)
 - **Tool calls**: `outputs["tool_calls"]` (if `outputs` has `tool:` entries)
 - **Logs**: `outputs["stdout"]`, `outputs["stderr"]` (if `traces.stdout`/`stderr` enabled)
+- **Annotations**: `outputs["annotations"]` — parsed `annotations.yaml` from the dataset case directory (always present, empty dict if no file). Use for outcome-aware scoring where expected results depend on the test case.
 
-This means judges can check both output quality AND execution efficiency (cost, turns, errors).
+This means judges can check output quality, execution efficiency, AND expected outcomes from annotations.
 
 If `--baseline` was specified, also run pairwise comparison:
 
