@@ -20,6 +20,14 @@ def main():
     plugin_data = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     plugin_root = Path(__file__).parent.parent
 
+    try:
+        import yaml  # noqa: F401
+    except ImportError:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "pyyaml>=6.0"],
+            check=False,
+        )
+
     eval_yaml = _find_eval_yaml(plugin_root)
 
     deps = ["pyyaml>=6.0"]
@@ -31,9 +39,8 @@ def main():
         try:
             import yaml
             config = yaml.safe_load(content) or {}
-        except ImportError:
-            config = {}
-        except Exception:
+        except Exception as e:
+            print(f"ensure_deps: failed to parse {eval_yaml}: {e}", file=sys.stderr)
             config = {}
 
         mlflow_cfg = config.get("mlflow", {})
