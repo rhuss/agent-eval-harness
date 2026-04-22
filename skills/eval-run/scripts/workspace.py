@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import os
 import re
 import shutil
 import sys
@@ -313,6 +314,24 @@ def _expand_symlink_permissions(allow_list):
     return allow_list + extras
 
 
+def _inject_env(settings, config):
+    """Inject execution.env into settings.json env block.
+
+    Values starting with ``$`` are resolved from ``os.environ``.
+    Missing env vars are silently omitted.  Literal values pass through.
+    """
+    if not config.execution.env:
+        return
+    env_block = settings.setdefault("env", {})
+    for key, value in config.execution.env.items():
+        if isinstance(value, str) and value.startswith("$"):
+            resolved = os.environ.get(value[1:])
+            if resolved is not None:
+                env_block[key] = resolved
+        else:
+            env_block[key] = str(value)
+
+
 def _carry_over_permissions(settings):
     """Copy project permissions (allow, deny, additionalDirectories) into settings."""
     import json as _json
@@ -394,6 +413,9 @@ def _setup_subagent_only_hook(workspace, config):
     subagent_dir = str((workspace / "subagents").resolve())
     setup_subagent_hook(settings, subagent_dir)
 
+    # Inject execution.env into settings
+    _inject_env(settings, config)
+
     # Apply user-provided runner.settings last so they can override defaults
     _apply_runner_settings(settings, config)
 
@@ -450,8 +472,11 @@ def _setup_tool_hooks(workspace, config):
         hook_matchers.update(patterns)
 
     # Write tool_handlers.yaml
+    handler_data = {"handlers": handlers}
+    if config.models.hook:
+        handler_data["hook_model"] = config.models.hook
     with open(workspace / "tool_handlers.yaml", "w") as f:
-        yaml.dump({"handlers": handlers}, f, default_flow_style=False)
+        yaml.dump(handler_data, f, default_flow_style=False)
 
     # Copy interceptor script
     hooks_dir = workspace / "hooks"
@@ -491,6 +516,9 @@ def _setup_tool_hooks(workspace, config):
     from agent_eval.agent.stream_capture import setup_subagent_hook
     subagent_dir = str((workspace / "subagents").resolve())
     setup_subagent_hook(settings, subagent_dir)
+
+    # Inject execution.env into settings
+    _inject_env(settings, config)
 
     # Apply user-provided runner.settings last so they can override defaults
     _apply_runner_settings(settings, config)

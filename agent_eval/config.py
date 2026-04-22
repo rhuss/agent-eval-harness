@@ -94,11 +94,19 @@ class ExecutionConfig:
     Constraints:
     - timeout: subprocess wall-clock timeout in seconds (None = harness default).
     - max_budget_usd: per-invocation cost cap (None = no cap).
+
+    Environment:
+    - env: extra environment variables injected into each case workspace's
+      .claude/settings.json.  Available to both the skill and its hooks.
+      Values starting with ``$`` are resolved from the caller's environment
+      (e.g., ``$JIRA_TOKEN`` → ``os.environ["JIRA_TOKEN"]``).  Missing
+      vars are silently omitted.  Literal values are passed through as-is.
     """
     mode: str = "case"
     arguments: str = ""
     timeout: Optional[int] = None
     max_budget_usd: Optional[float] = None
+    env: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -148,6 +156,7 @@ class ModelsConfig:
     skill: Optional[str] = None
     subagent: Optional[str] = None
     judge: Optional[str] = None
+    hook: Optional[str] = None
 
 
 @dataclass
@@ -244,6 +253,7 @@ class EvalConfig:
             arguments=exec_raw.get("arguments", ""),
             timeout=exec_raw.get("timeout"),
             max_budget_usd=exec_raw.get("max_budget_usd"),
+            env=exec_raw.get("env") or {},
         )
 
         # Runner config (block form)
@@ -264,6 +274,7 @@ class EvalConfig:
             skill=models_raw.get("skill"),
             subagent=models_raw.get("subagent"),
             judge=models_raw.get("judge"),
+            hook=models_raw.get("hook"),
         )
 
         # MLflow block. Experiment defaults to the eval's top-level

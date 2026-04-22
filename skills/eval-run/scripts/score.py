@@ -59,6 +59,21 @@ def load_case_record(case_dir, config, run_id=None, runs_dir=None):
     case_dir = Path(case_dir).resolve()
     record = {"files": {}, "tool_calls": [], "case_dir": str(case_dir)}
 
+    # --- Annotations (from dataset case directory) ---
+    record["annotations"] = {}
+    case_id = case_dir.name
+    if config.dataset_path:
+        dataset_root = Path(config.dataset_path).resolve()
+        annotations_path = (dataset_root / case_id / "annotations.yaml").resolve()
+        if (annotations_path.is_relative_to(dataset_root)
+                and annotations_path.is_file()
+                and not annotations_path.is_symlink()):
+            try:
+                with open(annotations_path) as f:
+                    record["annotations"] = yaml.safe_load(f) or {}
+            except (yaml.YAMLError, OSError):
+                pass
+
     # --- File artifacts (from path outputs) ---
     for output in config.outputs:
         if not output.path:

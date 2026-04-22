@@ -99,15 +99,37 @@ def _find_handler(tool_name, tool_input, handlers):
 
 
 def _handle_ask_user(tool_input, config, handler):
-    """Auto-answer AskUserQuestion using case overrides or first option."""
+    """Auto-answer AskUserQuestion using case overrides, LLM, or first option.
+
+    Resolution order for each question:
+    1. Exact match in case_overrides (question text → answer)
+    2. LLM-based answer (haiku) using the handler prompt + case context
+    3. Fallback: pick the first option or "yes"
+    """
     case_overrides = config.get("case_overrides", {})
+    hook_model = config.get("hook_model")
+    prompt = handler.get("prompt", "")
+    if not prompt and handler.get("prompt_file"):
+        try:
+            prompt = Path(handler["prompt_file"]).read_text()
+        except OSError:
+            pass
     answers = {}
     for q in tool_input.get("questions", []):
         text = q.get("question", "")
+        options = q.get("options", [])
+
+        # 1. Exact match
         answer = case_overrides.get(text)
+
+        # 2. LLM-based answer
+        if answer is None and options:
+            answer = _llm_answer(text, options, prompt, model=hook_model)
+
+        # 3. Fallback
         if answer is None:
-            options = q.get("options", [])
             answer = options[0]["label"] if options else "yes"
+
         answers[text] = answer
 
     output = {
@@ -121,6 +143,71 @@ def _handle_ask_user(tool_input, config, handler):
         }
     }
     json.dump(output, sys.stdout)
+
+
+def _llm_answer(question, options, handler_prompt, model=None):
+    """Use an LLM to pick the best answer for a question.
+
+    Reads input.yaml and answers.yaml from CWD for case-specific context.
+    Returns the selected option label, or None if the API call fails.
+    """
+    # Load case context
+    case_context = ""
+    for fname in ("input.yaml", "answers.yaml"):
+        p = Path(fname)
+        if p.exists():
+            try:
+                case_context += f"\n--- {fname} ---\n{p.read_text()}\n"
+            except OSError:
+                pass
+
+    option_labels = [o["label"] for o in options]
+    option_list = "\n".join(
+        f"  {i+1}. {o['label']}: {o.get('description', '')}"
+        for i, o in enumerate(options)
+    )
+
+    prompt = f"""You are answering a question on behalf of a user during an automated evaluation run.
+
+Handler instructions: {handler_prompt}
+
+Case context:
+{case_context}
+
+Question: {question}
+
+Available options:
+{option_list}
+
+Based on the handler instructions and case context, which option should be selected?
+Reply with ONLY the option label text, nothing else."""
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(timeout=30.0)
+        response = client.messages.create(
+            model=model or "claude-haiku-4-5-20251001",
+            max_tokens=256,
+            temperature=0,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        answer = response.content[0].text.strip()
+        # Verify the answer matches an option label
+        if answer in option_labels:
+            print(f"LLM answered: {answer!r}", file=sys.stderr)
+            return answer
+        # Try fuzzy match — LLM might have added quotes or slight variation
+        answer_lower = answer.lower().strip('"\'')
+        for label in option_labels:
+            if label.lower() == answer_lower:
+                print(f"LLM answered (fuzzy): {label!r}", file=sys.stderr)
+                return label
+        print(f"LLM answer {answer!r} not in options {option_labels}",
+              file=sys.stderr)
+    except Exception as e:
+        print(f"LLM answer failed: {e}", file=sys.stderr)
+
+    return None
 
 
 def _deny(reason):

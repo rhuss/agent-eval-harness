@@ -338,10 +338,43 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
     # Write aggregated run_result.json
     total_duration = sum(r["duration_s"] for r in case_results.values())
     total_cost = sum(r.get("cost_usd") or 0 for r in case_results.values())
+    total_turns = sum(r.get("num_turns") or 0 for r in case_results.values())
+
+    # Aggregate token_usage across cases
+    agg_tokens = {}
+    for r in case_results.values():
+        tu = r.get("token_usage") or {}
+        for k, v in tu.items():
+            if isinstance(v, (int, float)):
+                agg_tokens[k] = agg_tokens.get(k, 0) + v
+
+    # Aggregate per_model_usage across cases
+    agg_per_model = {}
+    for r in case_results.values():
+        pmu = r.get("per_model_usage") or {}
+        for m, stats in pmu.items():
+            if m not in agg_per_model:
+                agg_per_model[m] = {}
+            for k, v in stats.items():
+                if isinstance(v, (int, float)):
+                    agg_per_model[m][k] = agg_per_model[m].get(k, 0) + v
+
+    # Aggregate per_model_turns across cases
+    agg_per_model_turns = {}
+    for r in case_results.values():
+        pmt = r.get("per_model_turns") or {}
+        for m, t in pmt.items():
+            if isinstance(t, (int, float)):
+                agg_per_model_turns[m] = agg_per_model_turns.get(m, 0) + t
+
     run_meta = {
         "exit_code": worst_exit,
         "duration_s": round(total_duration, 1),
         "cost_usd": round(total_cost, 2),
+        "token_usage": agg_tokens or None,
+        "num_turns": total_turns or None,
+        "per_model_usage": agg_per_model or None,
+        "per_model_turns": agg_per_model_turns or None,
         "num_cases": len(case_results),
         "model": model,
         "agent": runner.name,
