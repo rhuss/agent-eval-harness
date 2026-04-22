@@ -33,9 +33,6 @@ execution:
   # Batch example: "--input batch.yaml --headless --dry-run"
   # timeout: 3600           # Per-invocation wall-clock timeout (seconds)
   # max_budget_usd: 5.0     # Per-invocation cost cap
-  # env:                     # Inject env vars into workspace .claude/settings.json
-  #   JIRA_SERVER: http://localhost:8080   # Literal value
-  #   JIRA_TOKEN: $JIRA_TOKEN              # $VAR resolved from caller's environment
 
 # Runner — agent harness + runner-specific knobs
 runner:
@@ -51,7 +48,6 @@ models:
   skill: <model-id>         # Required (or pass --model)
   # subagent: <model-id>    # Defaults to skill model
   judge: <model-id>         # Used by LLM and pairwise judges
-  # hook: claude-haiku-4-5-20251001  # Model for LLM-based AskUserQuestion answering
 
 # Permissions for headless execution
 # The Skill tool requires explicit permission in --print mode.
@@ -75,24 +71,13 @@ dataset:
     <natural language description of each case's structure>
 
 # Inputs — tool interception for headless execution
-#
-# AskUserQuestion answering uses 3-tier resolution:
-#   1. Exact match from case_overrides (set in tool_handlers.yaml by eval-run)
-#   2. LLM call (models.hook) using the handler prompt + case context
-#      (input.yaml and answers.yaml from the case directory)
-#   3. Fallback: pick the first option or "yes"
-#
-# For skills with interactive decisions (e.g., duplicate detection
-# confirmation), provide per-case answers.yaml files in the dataset
-# with guidance the LLM answerer can use.
 inputs:
   tools:
     # Auto-answer user questions
     # - match: Questions asked to the user via AskUserQuestion.
     #   prompt: |
-    #     Answer based on the test case context in input.yaml and answers.yaml.
-    #     Use answers.yaml guidance for domain-specific decisions.
-    #     Default: pick the first option or answer "yes" for confirmations.
+    #     Answer based on the test case context.
+    #     Default: pick the first option or answer "yes".
 
     # Control external service access (MCP tools AND scripts)
     # - match: |
@@ -207,7 +192,6 @@ Key fields in `outputs`:
 - `outputs["exit_code"]`, `outputs["duration_s"]`, `outputs["cost_usd"]`, `outputs["num_turns"]` — execution metadata
 - `outputs["tool_calls"]` — list of captured tool calls
 - `outputs["stdout"]`, `outputs["stderr"]` — captured logs
-- `outputs["annotations"]` — parsed `annotations.yaml` from the dataset case directory (always present, empty dict if no file)
 
 Example check judge — find files by path prefix and read their content:
 ```yaml
