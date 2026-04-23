@@ -864,7 +864,11 @@ def _render_scoring_summary(summary, config, baseline_summary=None):
         status_cls = "skip"
         status_label = "—"
 
-        if isinstance(thresh, dict):
+        if pass_rate is None and mean is None:
+            # All cases skipped (condition was false) — show SKIP pill
+            status_cls = "skip"
+            status_label = "SKIP"
+        elif isinstance(thresh, dict):
             if "min_pass_rate" in thresh and pass_rate is not None:
                 thresh_str = f"&ge; {_pct(thresh['min_pass_rate'])}"
                 ok = pass_rate >= thresh["min_pass_rate"]
@@ -1292,6 +1296,8 @@ def _md_table_to_html(table_lines):
                 html += f'<td><span class="pass">{inner}</span></td>'
             elif stripped == "FAIL":
                 html += f'<td><span class="fail">{inner}</span></td>'
+            elif stripped in ("SKIP", "SKIPPED"):
+                html += f'<td><span class="skip">{inner}</span></td>'
             else:
                 html += f"<td>{inner}</td>"
         html += "</tr>\n"
@@ -1384,17 +1390,21 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
         case_dir = cases_dir / case_id
         label = case_id
 
-        # Count pass/fail — bool judges: True=pass, False=fail
+        # Count pass/fail/skip — bool judges: True=pass, False=fail
         # Numeric judges (LLM): pass if score >= threshold min_mean
+        # None values: skipped (condition was false)
         thresholds = config.get("thresholds", {})
         passed = 0
         failed = 0
+        skipped = 0
         total = len(case_results)
         for jname, r in case_results.items():
             if not isinstance(r, dict):
                 continue
             val = r.get("value")
-            if val is True:
+            if val is None:
+                skipped += 1
+            elif val is True:
                 passed += 1
             elif val is False:
                 failed += 1
@@ -1421,9 +1431,11 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
         else:
             accent_class = f"case-{status}"
 
+        scored = total - skipped
+        skip_note = f", {skipped} skip" if skipped else ""
         html += (f'<details open class="case {accent_class}"><summary>'
                  f'<span class="{status}">{_esc(str(label))}</span> '
-                 f'<span class="skip">({passed}/{total} pass)</span>'
+                 f'<span class="skip">({passed}/{scored} pass{skip_note})</span>'
                  f'{pw_badge}</summary>\n')
 
         # Judge results table
@@ -1435,7 +1447,9 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
             rat = str(jresult.get("rationale", ""))
             err = jresult.get("error", "")
 
-            if val is True:
+            if val is None:
+                val_html = '<span class="skip">SKIP</span>'
+            elif val is True:
                 val_html = '<span class="pass">PASS</span>'
             elif val is False:
                 val_html = '<span class="fail">FAIL</span>'
@@ -1473,8 +1487,12 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
         # Output files — when baseline is provided, skip files under output_paths
         # since those will appear in the baseline diff section below.
         has_baseline = bl_cases_dir and (bl_cases_dir / case_id).exists()
+        # Execution logs — not skill output, exclude from the report
+        _EXEC_LOGS = {"stdout.log", "stderr.log", "run_result.json"}
         if case_dir.exists():
             files = sorted(f for f in case_dir.rglob("*") if f.is_file()
+                           and f.name not in _EXEC_LOGS
+                           and not str(f.relative_to(case_dir)).startswith("subagents/")
                            and not any(str(f.relative_to(case_dir)).startswith(sp)
                                        for sp in shared_paths))
             if has_baseline:
