@@ -39,29 +39,21 @@ Generic evaluation framework for agents and skills. Analyze, run, score, and imp
 
 ### 1. Add to your project
 
-Clone the harness and install it as a dependency:
+Install from the [skills registry](https://github.com/opendatahub-io/skills-registry):
+
+```bash
+claude plugin install agent-eval-harness@opendatahub-skills
+```
+
+Or clone and load as a local plugin:
 
 ```bash
 git clone https://github.com/opendatahub-io/agent-eval-harness
 pip install -e ./agent-eval-harness
-```
-
-Then load it as a Claude Code plugin to get the eval skills:
-
-```bash
-# One-time via CLI flag
 claude --plugin-dir ./agent-eval-harness
-
-# Or permanently in your project's .claude/settings.json
 ```
 
-```json
-{
-  "plugins": ["./agent-eval-harness"]
-}
-```
-
-This makes all eval skills available in your project: `/eval-setup`, `/eval-analyze`, `/eval-dataset`, `/eval-run`, `/eval-review`, `/eval-mlflow`, and `/eval-optimize`.
+This makes all eval skills available: `/eval-setup`, `/eval-analyze`, `/eval-dataset`, `/eval-run`, `/eval-review`, `/eval-mlflow`, and `/eval-optimize`.
 
 ### 2. Set up environment
 
@@ -96,7 +88,7 @@ Creates 5 starter test cases based on the skill analysis. Skip this if you alrea
 /eval-run --model opus
 ```
 
-This prepares a workspace, runs the skill headlessly, collects artifacts, scores with judges, and reports results.
+This prepares a workspace, runs the skill (headless or interactive), collects artifacts, scores with judges, and reports results.
 
 ## eval.yaml
 
@@ -113,6 +105,9 @@ execution:
   arguments: "{prompt}"   # resolved per case from input.yaml fields
   # timeout: 3600
   # max_budget_usd: 5.0
+  # env:                     # Inject env vars into workspace settings
+  #   JIRA_SERVER: http://localhost:8080   # Literal value
+  #   JIRA_TOKEN: $JIRA_TOKEN              # $VAR resolved from caller's env
 
 # Runner — agent harness + runner-specific knobs
 runner:
@@ -125,6 +120,7 @@ runner:
 models:
   skill: claude-opus-4-7
   judge: claude-opus-4-7
+  # hook: claude-sonnet-4-6  # Model for LLM-based AskUserQuestion answering
 
 # MLflow logging target (optional)
 mlflow:
@@ -145,12 +141,15 @@ dataset:
       the skill. Optionally 'context' with additional context.
     - reference.md: Gold standard output for comparison scoring.
 
-# Inputs — tool interception for headless execution
+# Inputs — tool interception for headless/interactive execution
+# AskUserQuestion uses 3-tier answering: exact case_overrides →
+# LLM call (models.hook) with input.yaml + answers.yaml context → fallback
 inputs:
   tools: []
   # - match: Questions asked to the user via AskUserQuestion.
   #   prompt: |
-  #     Answer simply. Default to "yes" for confirmations.
+  #     Answer based on test case context in input.yaml and answers.yaml.
+  #     Default to "yes" for confirmations.
   # - match: |
   #     Any interaction with Jira — MCP tools or scripts.
   #   prompt: |
@@ -189,8 +188,9 @@ judges:
           return False, f"Output too short ({len(content.strip())} chars)"
       return True, f"Output has {len(content.strip())} chars"
 
-  # LLM judge with inline prompt
+  # LLM judge with inline prompt (conditional — skipped when condition is false)
   - name: output_quality
+    if: "not annotations.get('skip_quality', False)"  # Skip based on annotations
     description: |
       Evaluate quality compared to the reference. Score 1-5.
     prompt: |
@@ -245,18 +245,19 @@ thresholds:
 
 ### Key concepts
 
-- **`execution`** — `mode` (`case` or `batch`) and `arguments` template. In `case` mode (default), the skill is invoked once per test case with `{field}` placeholders resolved from each case's input.yaml. In `batch` mode, all cases are bundled into batch.yaml for a single invocation.
+- **`execution`** — `mode` (`case` or `batch`), `arguments` template, and optional `env` for injecting environment variables into workspaces (`$VAR` syntax resolves from caller's environment). In `case` mode (default), the skill is invoked once per test case with `{field}` placeholders resolved from each case's input.yaml. In `batch` mode, all cases are bundled into batch.yaml for a single invocation.
 - **`schema`** — natural language description of structure. Used on `dataset` and each `outputs` entry. Agents and judges read these to understand the data.
-- **`inputs.tools`** — tool interception for headless execution. Each entry has a `match` (natural language description of what to intercept — tools, scripts, APIs) and a `prompt` (how to handle it). eval-analyze generates these from skill analysis; eval-run resolves them to concrete patterns at setup time.
+- **`inputs.tools`** — tool interception for headless and interactive execution. Each entry has a `match` (what to intercept) and a `prompt` (how to handle it). AskUserQuestion uses 3-tier answering: exact `case_overrides` → LLM call (`models.hook`) with case context (`input.yaml` + `answers.yaml`) → fallback to first option.
 - **`outputs`** — two types: `path` for file artifacts on disk, `tool` for tool call side effects (Jira, APIs). Both have `schema` descriptions.
 - **`traces`** — execution data to capture: stdout/stderr logs, events (tool calls, reasoning text, results), metrics (exit code, tokens, cost, duration). Available to judges via the `outputs` dict.
-- **`check`** — inline Python snippet for deterministic validation. Receives an `outputs` dict with file contents, execution metadata, tool calls, and logs. Returns `(bool, str)`.
+- **`check`** — inline Python snippet for deterministic validation. Receives an `outputs` dict with file contents, execution metadata, tool calls, logs, and `annotations` (from dataset `annotations.yaml`). Returns `(bool, str)`.
+- **`if`** — optional condition on a judge. Python expression evaluated against `annotations` and `outputs`. When false, the judge is skipped for that case (not counted in pass_rate or mean).
 - **`prompt`** / **`prompt_file`** — LLM judge evaluation instructions.
 - **`context`** — list of file paths loaded and appended to the LLM judge prompt as supplementary material (rubrics, guidelines, examples).
 - **`module`** / **`function`** — external Python code judge for complex validation.
 - **`permissions`** — tool access patterns (`allow`/`deny`) for headless execution. Generic across runners — each runner translates to its platform's mechanism.
 - **`runner`** — `type` discriminator selects the runner implementation; remaining fields (`settings`, `plugin_dirs`, `env_strip`, `system_prompt`) are runner-specific and ignored by other runners.
-- **`models`** — `skill`/`subagent`/`judge` defaults, overridable per-judge or via CLI flags.
+- **`models`** — `skill`/`subagent`/`judge`/`hook` defaults, overridable per-judge or via CLI flags. `hook` is the model used for LLM-based AskUserQuestion answering.
 - **`mlflow`** — `experiment` (and optional `tracking_uri`/`tags`) for result logging.
 
 ## Example: eval.yaml for RFE Creator
@@ -538,4 +539,4 @@ echo "/rfe.speedrun --input batch.yaml --headless" | claude-trace --model opus
 
 - `pyyaml >= 6.0`
 - Optional: `mlflow[genai] >= 3.5` (for `/eval-mlflow` and `claude-trace`)
-- Optional: `anthropic >= 0.40` (for pairwise comparison)
+- Optional: `anthropic >= 0.40` (for LLM judges, pairwise comparison, and hook answering)
