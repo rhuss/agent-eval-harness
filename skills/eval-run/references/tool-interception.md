@@ -56,7 +56,7 @@ case_overrides:
 
 1. Match by pattern: `patterns: ["AskUserQuestion"]`
 2. **Tier 1 — exact match**: look up the question text in `case_overrides`
-3. **Tier 2 — LLM call**: if no exact match and options are available, call the `hook_model` with the question, options, handler `prompt`, and case context (`input.yaml` + `answers.yaml` from CWD). The LLM picks the best option based on context.
+3. **Tier 2 — LLM call**: if no exact match and options are available, call the `hook_model` with the question, options, handler `prompt`, and case context (`input.yaml` + `answers.yaml` from CWD). The LLM picks the best option based on context. **Note**: case files are sent to the LLM API — do not put secrets, credentials, or PII in `input.yaml` or `answers.yaml`.
 4. **Tier 3 — fallback**: pick the first option, or "yes"
 5. Return `permissionDecision: "allow"` with `updatedInput` containing answers
 

@@ -135,7 +135,7 @@ dedup_guidance: >
 
 The LLM reads these fields alongside the question and options to pick the right answer. For general clarifying questions, the LLM uses `input.yaml` context — no `answers.yaml` needed. Only create `answers.yaml` when the case has domain-specific decisions (e.g., "is this a duplicate?", "should this be split?") where the correct answer depends on the test scenario.
 
-If unsure what questions the skill asks, leave `answers.yaml` out — the hook falls back to picking the first option or "yes".
+If unsure what questions the skill asks, you can leave `answers.yaml` out — the hook still calls the LLM using `input.yaml` context and the handler prompt, falling back to the first option only if the LLM call fails.
 
 **Annotations for outcome-aware judges**: Judges receive `outputs["annotations"]` — the parsed `annotations.yaml` from each case. If the eval config has judges that check expected outcomes (e.g., `annotations.get("dedup_is_duplicate")` to determine whether no output is correct), add the relevant fields to each case's `annotations.yaml`:
 
