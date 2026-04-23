@@ -41,7 +41,7 @@ If `--skip-mlflow` was NOT passed, also install mlflow:
 pip install 'mlflow[genai]>=3.5'
 ```
 
-For LLM judges and pairwise comparison (optional):
+For LLM judges, pairwise comparison, and LLM-based AskUserQuestion answering in hooks:
 
 ```bash
 pip install 'anthropic[vertex]>=0.40'
@@ -123,6 +123,27 @@ export AGENT_EVAL_RUNS_DIR=<path>
 ```
 
 All harness scripts read this env var. The directory is created automatically by `check_env.py --fix`.
+
+## Step 5b: Check Skill-Specific Environment Variables
+
+If eval.yaml exists and has `execution.env` entries with `$VAR` references, those variables must be set in the caller's environment at eval-run time. Check whether they're available:
+
+```bash
+test -f eval.yaml && PYTHONPATH=${CLAUDE_SKILL_DIR}/scripts python3 -c "
+from agent_eval.config import EvalConfig
+config = EvalConfig.from_yaml('eval.yaml')
+import os
+for key, value in config.execution.env.items():
+    if isinstance(value, str) and value.startswith('\$'):
+        var_name = value[1:]
+        status = 'set' if os.environ.get(var_name) else 'NOT SET'
+        print(f'  {key}: \${var_name} → {status}')
+    else:
+        print(f'  {key}: {value} (literal)')
+" 2>/dev/null
+```
+
+If any `$VAR` references are unset, warn the user — they'll need to `export` them before running `/eval-run`. Common examples: `JIRA_SERVER` for jira-emulator, `JIRA_TOKEN` for Jira API access.
 
 ## Step 6: Create MLflow Experiment
 
