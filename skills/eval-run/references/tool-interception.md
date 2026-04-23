@@ -5,9 +5,9 @@ This documents how `inputs.tools` handlers are resolved and executed during head
 ## Flow
 
 1. **eval.yaml** defines handlers with `match` (what to intercept) and `prompt` (how to handle)
-2. **workspace.py** extracts basic tool name patterns from `match` text and writes `tool_handlers.yaml`
+2. **workspace.py** extracts basic tool name patterns from `match` text, writes `tool_handlers.yaml`, and includes `hook_model` from `models.hook`
 3. **eval-run agent (Step 3b)** reads `tool_handlers.yaml`, interprets the `prompt` field, and adds concrete runtime checks
-4. **tools.py** (PreToolUse hook) executes the checks at runtime — no LLM needed during execution
+4. **tools.py** (PreToolUse hook) executes the checks at runtime. AskUserQuestion uses a 3-tier resolution: exact `case_overrides` match → LLM call (using `hook_model`) → first-option fallback. All other tool checks are deterministic.
 
 ## tool_handlers.yaml Format
 
@@ -16,7 +16,10 @@ handlers:
   # AskUserQuestion handler
   - match: "Questions asked to the user via AskUserQuestion."
     patterns: ["AskUserQuestion"]
-    prompt: "Answer based on the test case. Default to 'yes'."
+    prompt: |
+      Answer based on the test case context in input.yaml and answers.yaml.
+      Use answers.yaml guidance for domain-specific decisions.
+      Default: pick the first option or answer "yes" for confirmations.
 
   # External service handler (Jira via MCP AND scripts)
   - match: "Any Jira interaction via MCP tools or scripts."
@@ -27,10 +30,12 @@ handlers:
         must_contain: ["localhost", "emulator", "127.0.0.1", "test"]
     prompt: "Only allow if JIRA_SERVER points to a test instance."
 
-# Per-case answer overrides (from dataset answers.yaml)
+# Model for LLM-based AskUserQuestion answering (from models.hook)
+hook_model: claude-haiku-4-5-20251001
+
+# Per-case exact-match answer overrides (optional — LLM answering is preferred)
 case_overrides:
   "What priority should this have?": "Normal"
-  "Should this be split?": "No"
 ```
 
 ### Fields
@@ -41,17 +46,19 @@ case_overrides:
 | `patterns` | workspace.py (heuristic extraction) | tools.py | Tool name patterns for matching (exact or glob) |
 | `input_filters` | eval-run agent (Step 3b) | tools.py | Regex patterns to match Bash command content. When present with "Bash" in patterns, BOTH must match. |
 | `env_checks` | eval-run agent (Step 3b) | tools.py | Env var validation. Each key is a var name, `must_contain` lists required substrings. All must pass for the tool call to be allowed. |
-| `prompt` | workspace.py (from eval.yaml) | eval-run agent | Natural language instruction — the agent reads this to generate concrete checks |
-| `case_overrides` | eval-run agent (from dataset answers.yaml) | tools.py | Question → answer map for AskUserQuestion. Checked before auto-accept fallback. |
+| `prompt` | workspace.py (from eval.yaml) | eval-run agent, tools.py | Natural language instruction — the agent reads this to generate concrete checks. Also passed to the LLM answerer as context for AskUserQuestion. |
+| `hook_model` | workspace.py (from models.hook) | tools.py | Model ID for LLM-based AskUserQuestion answering. Defaults to `claude-haiku-4-5-20251001`. |
+| `case_overrides` | eval-run agent (optional) | tools.py | Question → answer map for AskUserQuestion. Exact-match tier — checked before LLM and fallback. |
 
 ## How tools.py Handles Each Tool Type
 
 ### AskUserQuestion
 
 1. Match by pattern: `patterns: ["AskUserQuestion"]`
-2. Look up answers in `case_overrides` (question text → answer)
-3. If no override found, auto-accept: pick the first option, or "yes"
-4. Return `permissionDecision: "allow"` with `updatedInput` containing answers
+2. **Tier 1 — exact match**: look up the question text in `case_overrides`
+3. **Tier 2 — LLM call**: if no exact match and options are available, call the `hook_model` with the question, options, handler `prompt`, and case context (`input.yaml` + `answers.yaml` from CWD). The LLM picks the best option based on context. **Note**: case files are sent to the LLM API — do not put secrets, credentials, or PII in `input.yaml` or `answers.yaml`.
+4. **Tier 3 — fallback**: pick the first option, or "yes"
+5. Return `permissionDecision: "allow"` with `updatedInput` containing answers
 
 ### MCP Tools (e.g., mcp__atlassian__*)
 
@@ -75,7 +82,7 @@ Tools with no matching handler pass through (exit 0, no interception).
 
 Read each handler in `tool_handlers.yaml` and resolve the `prompt` into concrete fields:
 
-1. **For AskUserQuestion**: Read the prompt for default answers. If the dataset has `answers.yaml` files per case, load them into `case_overrides`.
+1. **For AskUserQuestion**: The LLM answerer handles most questions automatically using the handler `prompt` + case context. Only add `case_overrides` entries for questions that need exact deterministic answers. The `answers.yaml` file in each case directory provides guidance the LLM reads at runtime — you don't need to load it into `case_overrides`.
 
 2. **For service interception** (Jira, Slack, etc.): Read the prompt and add:
    - `env_checks`: which env vars to validate and what values indicate test instances
@@ -117,6 +124,7 @@ Read each handler in `tool_handlers.yaml` and resolve the `prompt` into concrete
         }
     ],
     "files": {...},
+    "annotations": {...},
     "exit_code": 0,
     "cost_usd": 0.15,
     ...

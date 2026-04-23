@@ -170,6 +170,10 @@ class JudgeConfig:
     """
     name: str = ""
     description: str = ""  # What this judge checks (context for LLM judges)
+    # Condition — Python expression evaluated against the outputs dict.
+    # If it returns False, the judge is skipped for that case (not counted
+    # in pass_rate or mean).  Example: "not annotations.get('dedup_is_duplicate')"
+    condition: str = ""
     # Inline code check (returns (bool, str))
     check: str = ""
     # LLM judge / pairwise
@@ -342,6 +346,7 @@ class EvalConfig:
             config.judges.append(JudgeConfig(
                 name=j.get("name", ""),
                 description=j.get("description", ""),
+                condition=j.get("if", ""),
                 check=j.get("check", ""),
                 prompt=j.get("prompt", ""),
                 prompt_file=j.get("prompt_file", ""),
