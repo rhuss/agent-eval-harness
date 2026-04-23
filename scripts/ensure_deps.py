@@ -3,7 +3,7 @@
 
 Checks eval.yaml (if it exists) to decide which optional deps to install:
 - pyyaml: always required
-- mlflow[genai]: if mlflow.experiment is configured
+- mlflow[genai]: if a mlflow block is present in eval.yaml
 - anthropic[vertex]: if LLM judges or pairwise comparison are configured
 
 Caches a stamp file in CLAUDE_PLUGIN_DATA so installs only run once
@@ -30,7 +30,7 @@ def main():
 
     eval_yaml = _find_eval_yaml(plugin_root)
 
-    deps = ["pyyaml>=6.0"]
+    deps = [("pyyaml>=6.0", "yaml")]
     needs_mlflow = False
     needs_anthropic = False
 
@@ -43,8 +43,13 @@ def main():
             print(f"ensure_deps: failed to parse {eval_yaml}: {e}", file=sys.stderr)
             config = {}
 
-        mlflow_cfg = config.get("mlflow", {})
-        if isinstance(mlflow_cfg, dict) and mlflow_cfg.get("experiment"):
+        if not isinstance(config, dict):
+            print(f"ensure_deps: expected mapping in {eval_yaml}, got {type(config).__name__}",
+                  file=sys.stderr)
+            config = {}
+
+        mlflow_block = config.get("mlflow")
+        if mlflow_block is not None:
             needs_mlflow = True
 
         judges = config.get("judges", [])
@@ -57,28 +62,29 @@ def main():
                     break
 
     if needs_mlflow:
-        deps.append("mlflow[genai]>=3.5")
+        deps.append(("mlflow[genai]>=3.5", "mlflow"))
     if needs_anthropic:
-        deps.append("anthropic[vertex]>=0.40")
+        deps.append(("anthropic[vertex]>=0.40", "anthropic"))
 
-    stamp = _compute_stamp(deps)
+    stamp = _compute_stamp([spec for spec, _ in deps])
 
+    stamp_file = None
     if plugin_data:
         plugin_data.mkdir(parents=True, exist_ok=True)
         stamp_file = plugin_data / "deps.stamp"
-        if stamp_file.exists() and stamp_file.read_text().strip() == stamp:
-            return
 
     missing = []
-    for dep in deps:
-        pkg = dep.split("[")[0].split(">")[0].split("=")[0]
-        import_name = pkg.replace("-", "_").replace("[", "").replace("]", "")
-        if import_name == "pyyaml":
-            import_name = "yaml"
+    for spec, import_name in deps:
         try:
             __import__(import_name)
         except ImportError:
-            missing.append(dep)
+            missing.append(spec)
+
+    if not missing and stamp_file:
+        stamp_file.write_text(stamp)
+
+    if not missing:
+        return
 
     if not missing:
         if plugin_data:
@@ -87,14 +93,14 @@ def main():
 
     print(f"Installing: {', '.join(missing)}")
     result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q"] + missing,
+        [sys.executable, "-m", "pip", "install", "-q", *missing],
         capture_output=True, text=True
     )
     if result.returncode != 0:
         print(f"pip install failed: {result.stderr}", file=sys.stderr)
         return
 
-    if plugin_data:
+    if stamp_file:
         stamp_file.write_text(stamp)
 
 
