@@ -865,9 +865,21 @@ def _render_scoring_summary(summary, config, baseline_summary=None):
         status_label = "—"
 
         if pass_rate is None and mean is None:
-            # All cases skipped (condition was false) — show SKIP pill
-            status_cls = "skip"
-            status_label = "SKIP"
+            # No aggregatable values — distinguish skip from error by
+            # checking per-case results for this judge
+            per_case = summary.get("per_case", {})
+            has_errors = any(
+                isinstance((per_case.get(c) or {}).get(judge_name), dict)
+                and (per_case[c][judge_name].get("error")
+                     or per_case[c][judge_name].get("value") is False)
+                for c in per_case
+            )
+            if has_errors:
+                status_cls = "fail"
+                status_label = "ERROR"
+            else:
+                status_cls = "skip"
+                status_label = "SKIP"
         elif isinstance(thresh, dict):
             if "min_pass_rate" in thresh and pass_rate is not None:
                 thresh_str = f"&ge; {_pct(thresh['min_pass_rate'])}"
@@ -1487,11 +1499,13 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
         # Output files — when baseline is provided, skip files under output_paths
         # since those will appear in the baseline diff section below.
         has_baseline = bl_cases_dir and (bl_cases_dir / case_id).exists()
-        # Execution logs — not skill output, exclude from the report
-        _EXEC_LOGS = {"stdout.log", "stderr.log", "run_result.json"}
+        # Execution logs at the case root — not skill output, exclude from
+        # the report.  Only exclude root-level files, not nested ones with the
+        # same name (a skill could legitimately produce artifacts/stdout.log).
+        _EXEC_LOG_PATHS = {"stdout.log", "stderr.log", "run_result.json"}
         if case_dir.exists():
             files = sorted(f for f in case_dir.rglob("*") if f.is_file()
-                           and f.name not in _EXEC_LOGS
+                           and str(f.relative_to(case_dir)) not in _EXEC_LOG_PATHS
                            and not str(f.relative_to(case_dir)).startswith("subagents/")
                            and not any(str(f.relative_to(case_dir)).startswith(sp)
                                        for sp in shared_paths))

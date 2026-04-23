@@ -139,8 +139,9 @@ for key, value in config.execution.env.items():
         status = 'set' if os.environ.get(var_name) else 'NOT SET'
         print(f'  {key}: \${var_name} → {status}')
     else:
-        print(f'  {key}: {value} (literal)')
-" 2>/dev/null
+        # Mask literal values to avoid leaking credentials in logs
+        print(f'  {key}: (literal, {len(str(value))} chars)')
+" 2>&1 || echo "  (could not parse eval.yaml)"
 ```
 
 If any `$VAR` references are unset, warn the user — they'll need to `export` them before running `/eval-run`. Common examples: `JIRA_SERVER` for jira-emulator, `JIRA_TOKEN` for Jira API access.
