@@ -231,16 +231,16 @@ def load_judges(config, project_root=None):
                   file=sys.stderr)
             continue
         if scorer:
-            judges.append((jc.name, scorer))
+            judges.append((jc.name, scorer, jc.condition))
     return judges
 
 
 def score_cases(judges, case_dirs, config, run_id=None):
     """Score all cases with all judges in parallel."""
     if not case_dirs:
-        return {"per_case": {}, "aggregated": {n: {"values": [], "mean": None, "pass_rate": None} for n, _ in judges}}
+        return {"per_case": {}, "aggregated": {n: {"values": [], "mean": None, "pass_rate": None} for n, _, _c in judges}}
     per_case = {}
-    aggregated = {name: {"values": []} for name, _ in judges}
+    aggregated = {name: {"values": []} for name, _, _c in judges}
     parallelism = min(len(case_dirs), os.cpu_count() or 4)
     lock = threading.Lock()
     completed = 0
@@ -249,7 +249,24 @@ def score_cases(judges, case_dirs, config, run_id=None):
         case_id = case_dir.name
         record = load_case_record(case_dir, config, run_id=run_id)
         case_results = {}
-        for name, scorer in judges:
+        for name, scorer, condition in judges:
+            # Check condition — skip if it evaluates to False
+            if condition:
+                try:
+                    annotations = record.get("annotations", {})
+                    if not eval(condition, {"__builtins__": {}},
+                                {"annotations": annotations, "outputs": record}):
+                        case_results[name] = {
+                            "value": None,
+                            "rationale": f"Skipped: condition '{condition}' is false",
+                        }
+                        continue
+                except Exception as e:
+                    case_results[name] = {
+                        "value": None,
+                        "rationale": f"Condition error: {e}",
+                    }
+                    continue
             try:
                 result = scorer(outputs=record)
                 # Normalize — accepts (bool, str) tuples, Feedback, primitives
@@ -761,7 +778,7 @@ def cmd_judges(args):
 
     judges = load_judges(config, project_root)
     print(f"Scoring {len(case_dirs)} cases with {len(judges)} judges: "
-          f"{[n for n, _ in judges]}")
+          f"{[n for n, *_ in judges]}")
 
     judge_results = score_cases(judges, case_dirs, config, run_id=args.run_id)
 
