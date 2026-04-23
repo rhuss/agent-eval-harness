@@ -122,15 +122,32 @@ case-005-ambiguous-phrasing/
 
 **Realism**: Cases should look like something a real user would encounter. Don't generate lorem ipsum or obviously synthetic inputs. Use realistic names, scenarios, and domain language appropriate to the skill.
 
-**Answers for interactive skills**: If eval.yaml has `inputs.tools` entries for AskUserQuestion, the skill asks questions during execution. Each test case should include an `answers.yaml` file mapping likely questions to answers. Check `inputs.tools` for the AskUserQuestion handler's prompt — it describes default answers. Override per case where the expected answer differs:
+**Answers for interactive skills**: If eval.yaml has `inputs.tools` entries for AskUserQuestion, the skill asks questions during execution. The hook uses LLM-based answering (via `models.hook`) that reads `input.yaml` and `answers.yaml` from each case as context. Create `answers.yaml` with **guidance** that tells the LLM how to answer domain-specific questions for this case:
 
 ```yaml
-# answers.yaml — per-case overrides for AskUserQuestion
-"What priority should this have?": "High"
-"Should this be split into multiple items?": "No"
+# answers.yaml — LLM answerer guidance for this case
+dedup_is_duplicate: true
+dedup_guidance: >
+  This RFE is intentionally a rephrased version of an existing RFE
+  about model signature verification. If asked whether existing RFEs
+  cover this need, the answer is yes.
 ```
 
-If unsure what questions the skill asks, leave `answers.yaml` out — the hook script auto-accepts with "yes" or the first option.
+The LLM reads these fields alongside the question and options to pick the right answer. For general clarifying questions, the LLM uses `input.yaml` context — no `answers.yaml` needed. Only create `answers.yaml` when the case has domain-specific decisions (e.g., "is this a duplicate?", "should this be split?") where the correct answer depends on the test scenario.
+
+If unsure what questions the skill asks, leave `answers.yaml` out — the hook falls back to picking the first option or "yes".
+
+**Annotations for outcome-aware judges**: Judges receive `outputs["annotations"]` — the parsed `annotations.yaml` from each case. If the eval config has judges that check expected outcomes (e.g., `annotations.get("dedup_is_duplicate")` to determine whether no output is correct), add the relevant fields to each case's `annotations.yaml`:
+
+```yaml
+# annotations.yaml — fields for outcome-aware judges
+dedup_is_duplicate: true   # or false — tells judges whether no RFE is expected
+tags: [dedup, high-overlap]
+known_issues:
+  - dedup should flag this as overlapping with RHAIRFE-1001
+```
+
+Check the eval.yaml `judges` section for any `check` snippets that access `outputs.get("annotations", {})` — those fields must exist in annotations.yaml for the judge to work correctly.
 
 **Companion files**: If eval.md lists `companion_files` (files the skill reads from disk at runtime — e.g., `strategy.md`, `adr.md`), each test case must include them. In `case` mode, the harness copies all case files into the workspace, so the skill will find them at their expected relative paths. Generate realistic content for these files appropriate to each case's scenario.
 
