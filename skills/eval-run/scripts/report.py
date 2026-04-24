@@ -959,7 +959,7 @@ def _render_regressions(summary, config):
     html += "<tr><th>Judge</th><th>Metric</th><th>Threshold</th><th>Actual</th></tr>\n"
     for judge, metric, expected, actual in regressions:
         html += (f'<tr><td>{_esc(judge)}</td><td>{metric}</td>'
-                 f'<td>{expected}</td><td class="fail">{actual}</td></tr>\n')
+                 f'<td>{expected}</td><td><span class="fail">{actual}</span></td></tr>\n')
     html += "</table>\n"
     return html
 
@@ -1303,12 +1303,14 @@ def _md_table_to_html(table_lines):
             # Color-code PASS/FAIL cells: wrap content in a badge span so the
             # `display: inline-block` badge style does not break <td> layout.
             stripped = c.strip()
+            # Strip bold/italic markdown for keyword matching
+            bare = stripped.strip("*").strip("_")
             inner = _md_inline(c)
-            if stripped == "PASS":
+            if bare in ("PASS", "FIXED"):
                 html += f'<td><span class="pass">{inner}</span></td>'
-            elif stripped == "FAIL":
+            elif bare in ("FAIL", "REGRESSION"):
                 html += f'<td><span class="fail">{inner}</span></td>'
-            elif stripped in ("SKIP", "SKIPPED"):
+            elif bare in ("SKIP", "SKIPPED"):
                 html += f'<td><span class="skip">{inner}</span></td>'
             else:
                 html += f"<td>{inner}</td>"
