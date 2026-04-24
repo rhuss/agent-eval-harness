@@ -17,6 +17,7 @@ import argparse
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -68,6 +69,11 @@ def main():
     if workspace.exists():
         shutil.rmtree(workspace)
     workspace.mkdir(parents=True, mode=0o700)
+
+    # Initialize a bare git repo so Claude Code subagents can discover
+    # the project root and load .claude/settings.json with the expanded
+    # permission patterns (e.g. /private/tmp variants on macOS).
+    subprocess.run(["git", "init", "-q", str(workspace)], check=True)
 
     # Branch on execution mode
     if config.execution.mode == "case":
@@ -186,6 +192,7 @@ def _create_per_case_workspace(workspace, case_dirs, config, args):
         case_id = case_dir.name
         case_ws = workspace / "cases" / case_id
         case_ws.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q", str(case_ws)], check=True)
 
         # Copy ALL files from the dataset case directory (H-2)
         for f in case_dir.iterdir():
