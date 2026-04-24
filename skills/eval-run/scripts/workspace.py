@@ -17,6 +17,7 @@ import argparse
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -68,6 +69,11 @@ def main():
     if workspace.exists():
         shutil.rmtree(workspace)
     workspace.mkdir(parents=True, mode=0o700)
+
+    # Initialize a bare git repo so Claude Code subagents can discover
+    # the project root and load .claude/settings.json with the expanded
+    # permission patterns (e.g. /private/tmp variants on macOS).
+    subprocess.run(["git", "init", "-q", str(workspace)], check=True)
 
     # Branch on execution mode
     if config.execution.mode == "case":
@@ -186,6 +192,7 @@ def _create_per_case_workspace(workspace, case_dirs, config, args):
         case_id = case_dir.name
         case_ws = workspace / "cases" / case_id
         case_ws.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q", str(case_ws)], check=True)
 
         # Copy ALL files from the dataset case directory (H-2)
         for f in case_dir.iterdir():
@@ -361,6 +368,19 @@ def _carry_over_permissions(settings):
             "additionalDirectories", []).extend(dirs)
 
 
+def _merge_harness_permissions(settings, config):
+    """Merge eval.yaml permissions.allow into settings so named subagents
+    (which may not inherit --allowed-tools) receive the harness patterns."""
+    allow = (config.permissions or {}).get("allow") if hasattr(config, "permissions") else None
+    if not allow:
+        return
+    harness_allow = _expand_symlink_permissions(list(allow))
+    existing = settings.setdefault("permissions", {}).setdefault("allow", [])
+    for pattern in harness_allow:
+        if pattern not in existing:
+            existing.append(pattern)
+
+
 def _deep_merge(dst, src):
     """Recursively merge src into dst. Lists are extended, dicts merged."""
     for k, v in src.items():
@@ -402,6 +422,7 @@ def _setup_subagent_only_hook(workspace, config):
 
     # Carry over project permissions (allow, deny, additionalDirectories)
     _carry_over_permissions(settings)
+    _merge_harness_permissions(settings, config)
 
     # Grant project root access
     project_root = str(Path.cwd().resolve())
@@ -502,6 +523,8 @@ def _setup_tool_hooks(workspace, config):
 
     # Carry over permissions (allow, deny, additionalDirectories)
     _carry_over_permissions(settings)
+
+    _merge_harness_permissions(settings, config)
 
     # Grant access to the project root so symlinked resources (skills,
     # scripts, context) can be read by the sandbox.
