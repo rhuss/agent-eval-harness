@@ -1304,7 +1304,7 @@ def _md_table_to_html(table_lines):
             # `display: inline-block` badge style does not break <td> layout.
             stripped = c.strip()
             # Strip bold/italic markdown for keyword matching
-            bare = stripped.strip("*").strip("_")
+            bare = stripped.strip("*_")
             inner = _md_inline(c)
             if bare in ("PASS", "FIXED"):
                 html += f'<td><span class="pass">{inner}</span></td>'

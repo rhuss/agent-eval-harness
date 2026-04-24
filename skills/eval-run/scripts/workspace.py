@@ -368,6 +368,19 @@ def _carry_over_permissions(settings):
             "additionalDirectories", []).extend(dirs)
 
 
+def _merge_harness_permissions(settings, config):
+    """Merge eval.yaml permissions.allow into settings so named subagents
+    (which may not inherit --allowed-tools) receive the harness patterns."""
+    allow = (config.permissions or {}).get("allow") if hasattr(config, "permissions") else None
+    if not allow:
+        return
+    harness_allow = _expand_symlink_permissions(list(allow))
+    existing = settings.setdefault("permissions", {}).setdefault("allow", [])
+    for pattern in harness_allow:
+        if pattern not in existing:
+            existing.append(pattern)
+
+
 def _deep_merge(dst, src):
     """Recursively merge src into dst. Lists are extended, dicts merged."""
     for k, v in src.items():
@@ -409,6 +422,7 @@ def _setup_subagent_only_hook(workspace, config):
 
     # Carry over project permissions (allow, deny, additionalDirectories)
     _carry_over_permissions(settings)
+    _merge_harness_permissions(settings, config)
 
     # Grant project root access
     project_root = str(Path.cwd().resolve())
@@ -510,15 +524,7 @@ def _setup_tool_hooks(workspace, config):
     # Carry over permissions (allow, deny, additionalDirectories)
     _carry_over_permissions(settings)
 
-    # Merge eval.yaml permissions.allow into settings.json so that
-    # named subagent types (which may not inherit --allowed-tools from
-    # the parent CLI) still get the harness permission patterns.
-    if config.permissions.get("allow"):
-        harness_allow = _expand_symlink_permissions(list(config.permissions["allow"]))
-        existing = settings.setdefault("permissions", {}).setdefault("allow", [])
-        for pattern in harness_allow:
-            if pattern not in existing:
-                existing.append(pattern)
+    _merge_harness_permissions(settings, config)
 
     # Grant access to the project root so symlinked resources (skills,
     # scripts, context) can be read by the sandbox.
