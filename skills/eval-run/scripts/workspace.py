@@ -510,6 +510,16 @@ def _setup_tool_hooks(workspace, config):
     # Carry over permissions (allow, deny, additionalDirectories)
     _carry_over_permissions(settings)
 
+    # Merge eval.yaml permissions.allow into settings.json so that
+    # named subagent types (which may not inherit --allowed-tools from
+    # the parent CLI) still get the harness permission patterns.
+    if config.permissions.get("allow"):
+        harness_allow = _expand_symlink_permissions(list(config.permissions["allow"]))
+        existing = settings.setdefault("permissions", {}).setdefault("allow", [])
+        for pattern in harness_allow:
+            if pattern not in existing:
+                existing.append(pattern)
+
     # Grant access to the project root so symlinked resources (skills,
     # scripts, context) can be read by the sandbox.
     project_root = str(Path.cwd().resolve())
