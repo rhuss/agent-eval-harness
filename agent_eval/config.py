@@ -119,7 +119,6 @@ class RunnerConfig:
     """
     type: str = "claude-code"
     settings: dict = field(default_factory=dict)
-    plugins: list = field(default_factory=list)
     plugin_dirs: list = field(default_factory=list)
     env_strip: list = field(default_factory=list)
     system_prompt: Optional[str] = None
@@ -265,7 +264,6 @@ class EvalConfig:
         runner = RunnerConfig(
             type=runner_raw.get("type", "claude-code"),
             settings=runner_raw.get("settings", {}) or {},
-            plugins=runner_raw.get("plugins", []) or [],
             plugin_dirs=runner_raw.get("plugin_dirs", []) or [],
             env_strip=runner_raw.get("env_strip", []) or [],
             system_prompt=runner_raw.get("system_prompt"),
