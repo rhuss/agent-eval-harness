@@ -156,9 +156,23 @@ def main():
         for tag_key, tag_value in (config.mlflow.tags or {}).items():
             mlflow.set_tag(tag_key, str(tag_value))
 
-        # ── Artifact ─────────────────────────────────────────────
+        # ── Artifacts ────────────────────────────────────────────
         if summary_path.exists():
             mlflow.log_artifact(str(summary_path))
+
+        # Log input files for from-traces extraction.
+        for name in ("batch.yaml", "case_order.yaml"):
+            p = run_dir / name
+            if p.exists():
+                mlflow.log_artifact(str(p), "inputs")
+        cases_dir = run_dir / "cases"
+        if cases_dir.is_dir():
+            for case_dir in sorted(cases_dir.iterdir()):
+                if not case_dir.is_dir():
+                    continue
+                inp = case_dir / "input.yaml"
+                if inp.exists():
+                    mlflow.log_artifact(str(inp), f"inputs/{case_dir.name}")
 
         # ── Per-case results table ───────────────────────────────
         per_case = summary.get("per_case", {})

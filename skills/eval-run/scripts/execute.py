@@ -166,6 +166,10 @@ def main():
     )
 
     _save_result(result, args, output_dir, runner, model, eval_params=eval_params)
+
+    # Copy batch input files to output dir for MLflow artifact logging.
+    _copy_input_files_batch(Path(args.workspace), output_dir)
+
     sys.exit(result.exit_code)
 
 
@@ -304,6 +308,11 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
         if result.stderr:
             (case_output / "stderr.log").write_text(result.stderr)
 
+        # Copy input.yaml for MLflow artifact logging.
+        if input_path.exists() and not input_path.is_symlink():
+            import shutil
+            shutil.copy2(input_path, case_output / "input.yaml")
+
         # Copy subagent transcripts
         ws_subagents = case_ws / "subagents"
         if ws_subagents.exists() and ws_subagents.is_dir():
@@ -395,6 +404,15 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
           f"{sum(1 for r in case_results.values() if r['exit_code'] != 0)} FAIL)")
 
     sys.exit(worst_exit)
+
+
+def _copy_input_files_batch(workspace, output_dir):
+    """Copy batch.yaml and case_order.yaml to output dir for MLflow artifact logging."""
+    import shutil
+    for name in ("batch.yaml", "case_order.yaml"):
+        src = workspace / name
+        if src.exists() and not src.is_symlink():
+            shutil.copy2(src, output_dir / name)
 
 
 def _save_result(result, args, output_dir, runner, model, eval_params=None):
