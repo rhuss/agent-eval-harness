@@ -60,49 +60,78 @@ def extract_trace_inputs(traces, max_results: int = 10) -> list:
     """Extract root span inputs from traces for dataset generation.
 
     Args:
-        traces: List of trace objects from mlflow.search_traces().
+        traces: DataFrame or list of trace objects from mlflow.search_traces().
         max_results: Maximum inputs to extract.
 
     Returns:
-        List of dicts with trace_id, input_text, tool_interactions.
+        List of dicts with trace_id, eval_run_id, input_text, tool_interactions.
     """
-    results = []
-    for trace in traces[:max_results]:
-        try:
-            info = trace.info if hasattr(trace, "info") else trace
-            trace_id = getattr(info, "request_id", getattr(info, "trace_id", ""))
+    try:
+        import pandas as pd
+        is_df = isinstance(traces, pd.DataFrame)
+    except ImportError:
+        is_df = False
 
-            # Extract root span input
-            data = trace.data if hasattr(trace, "data") else None
+    if is_df:
+        rows = [traces.iloc[i] for i in range(min(len(traces), max_results))]
+    else:
+        rows = traces[:max_results]
+
+    results = []
+    for trace in rows:
+        try:
             input_text = ""
             tool_interactions = []
+            eval_run_id = ""
 
-            if data and hasattr(data, "spans") and data.spans:
-                root = data.spans[0]
-                inputs = getattr(root, "inputs", {})
-                if isinstance(inputs, dict):
-                    input_text = inputs.get("prompt", inputs.get("input", str(inputs)))
-                elif isinstance(inputs, str):
-                    input_text = inputs
-
-                # Extract tool interactions from child spans
-                for span in data.spans[1:]:
-                    span_name = getattr(span, "name", "")
-                    if "AskUserQuestion" in span_name:
-                        span_inputs = getattr(span, "inputs", {})
-                        span_outputs = getattr(span, "outputs", {})
+            if is_df:
+                trace_id = trace.get("trace_id", "")
+                tags = trace.get("tags", {}) or {}
+                eval_run_id = tags.get("eval_run_id", "") if isinstance(tags, dict) else ""
+                request = trace.get("request", {})
+                if isinstance(request, dict):
+                    input_text = request.get("prompt", request.get("input", ""))
+                spans = trace.get("spans", []) or []
+                for span in spans:
+                    name = span.get("name", "") if isinstance(span, dict) else getattr(span, "name", "")
+                    if "AskUserQuestion" in name:
+                        attrs = span.get("attributes", {}) if isinstance(span, dict) else {}
                         tool_interactions.append({
                             "tool": "AskUserQuestion",
-                            "input": span_inputs,
-                            "output": span_outputs,
+                            "input": attrs,
+                            "output": {},
                         })
+            else:
+                info = trace.info if hasattr(trace, "info") else trace
+                trace_id = getattr(info, "request_id", getattr(info, "trace_id", ""))
+                tags = getattr(info, "tags", {}) or {}
+                eval_run_id = tags.get("eval_run_id", "") if isinstance(tags, dict) else ""
+                data = trace.data if hasattr(trace, "data") else None
+                if data and hasattr(data, "spans") and data.spans:
+                    root = data.spans[0]
+                    inputs = getattr(root, "inputs", {})
+                    if isinstance(inputs, dict):
+                        input_text = inputs.get("prompt", inputs.get("input", str(inputs)))
+                    elif isinstance(inputs, str):
+                        input_text = inputs
+                    for span in data.spans[1:]:
+                        span_name = getattr(span, "name", "")
+                        if "AskUserQuestion" in span_name:
+                            tool_interactions.append({
+                                "tool": "AskUserQuestion",
+                                "input": getattr(span, "inputs", {}),
+                                "output": getattr(span, "outputs", {}),
+                            })
 
             if input_text:
-                results.append({
+                entry = {
                     "trace_id": trace_id,
                     "input_text": input_text,
                     "tool_interactions": tool_interactions,
-                })
+                }
+                if eval_run_id:
+                    entry["eval_run_id"] = eval_run_id
+                results.append(entry)
         except Exception:
             continue
 

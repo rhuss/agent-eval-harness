@@ -30,6 +30,77 @@ from agent_eval.mlflow.experiment import get_experiment_id, resolve_tracking_uri
 from agent_eval.mlflow.traces import extract_trace_inputs
 
 
+def _attach_input_artifacts(extracted, experiment_id):
+    """Enrich extracted traces with input artifacts from linked MLflow runs.
+
+    For each trace with an eval_run_id tag, finds the MLflow run that logged
+    the eval results and downloads batch.yaml or per-case input.yaml artifacts.
+    """
+    import os
+    import tempfile
+
+    client = mlflow.MlflowClient()
+
+    run_ids_by_name = {}
+    for entry in extracted:
+        eval_run_id = entry.get("eval_run_id")
+        if not eval_run_id or eval_run_id in run_ids_by_name:
+            continue
+        try:
+            runs = mlflow.search_runs(
+                experiment_ids=[experiment_id],
+                filter_string=f"tags.mlflow.runName = '{eval_run_id}'",
+                max_results=1,
+            )
+            if not runs.empty:
+                run_ids_by_name[eval_run_id] = runs.iloc[0].run_id
+        except Exception:
+            continue
+
+    if not run_ids_by_name:
+        return
+
+    for entry in extracted:
+        eval_run_id = entry.get("eval_run_id")
+        mlflow_run_id = run_ids_by_name.get(eval_run_id)
+        if not mlflow_run_id:
+            continue
+
+        try:
+            artifacts = client.list_artifacts(mlflow_run_id, "inputs")
+        except Exception:
+            continue
+
+        if not artifacts:
+            continue
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                local_path = client.download_artifacts(mlflow_run_id, "inputs", tmp)
+            except Exception:
+                continue
+
+            from pathlib import Path
+            inputs_dir = Path(local_path)
+
+            batch_path = inputs_dir / "batch.yaml"
+            if batch_path.exists():
+                entry["batch_yaml"] = yaml.safe_load(batch_path.read_text())
+
+            for case_dir in sorted(inputs_dir.iterdir()):
+                if case_dir.is_dir():
+                    inp = case_dir / "input.yaml"
+                    if inp.exists():
+                        entry.setdefault("case_inputs", {})[case_dir.name] = (
+                            yaml.safe_load(inp.read_text())
+                        )
+
+    enriched = sum(1 for e in extracted if "batch_yaml" in e or "case_inputs" in e)
+    if enriched:
+        print(f"Enriched {enriched}/{len(extracted)} traces with input artifacts",
+              file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -64,7 +135,7 @@ def main():
         print(f"ERROR: failed to search traces: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if not traces:
+    if traces.empty:
         print(f"No traces found in experiment '{experiment_name}'", file=sys.stderr)
         sys.exit(2)
 
@@ -74,6 +145,9 @@ def main():
     if not extracted:
         print("No usable inputs extracted from traces", file=sys.stderr)
         sys.exit(2)
+
+    # Enrich with input artifacts from linked MLflow runs.
+    _attach_input_artifacts(extracted, exp_id)
 
     # Output as YAML
     yaml.dump(extracted, sys.stdout, default_flow_style=False,
