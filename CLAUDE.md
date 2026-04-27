@@ -81,16 +81,16 @@ skills/eval-optimize/    # Skill: automated refinement loop
 Skills projects create an `eval.yaml` config file with:
 - `skill` — skill to evaluate
 - `execution` — `mode` (`case` or `batch`), `arguments` template with `{field}` placeholders, optional `timeout`/`max_budget_usd`, and `env` for injecting environment variables into workspaces (`$VAR` syntax resolves from caller's env)
-- `runner` — `type` discriminator (`claude-code`, etc.) plus runner-specific `settings`/`plugin_dirs`/`env_strip`/`system_prompt`
+- `runner` — `type` discriminator (`claude-code`, etc.) plus runner-specific `effort`/`settings`/`plugin_dirs`/`env_strip`/`system_prompt`
 - `models` — defaults for `skill`/`subagent`/`judge`/`hook` roles (CLI flags override). `hook` is the model for LLM-based AskUserQuestion answering.
 - `mlflow` — `experiment`, optional `tracking_uri`/`tags`
 - `permissions` — `allow`/`deny` tool patterns for headless execution
 - `dataset` — `path` to test cases directory, `schema` describing case structure in natural language
 - `inputs.tools` — tool interception: `match` describes what to intercept, `prompt` how to handle it. AskUserQuestion uses 3-tier answering: exact `case_overrides` → LLM call (`models.hook`) with case context (`input.yaml` + `answers.yaml`) → fallback
-- `outputs` — list of artifact dirs (`path`) and/or tool calls (`tool`) with natural language schemas
+- `outputs` — list of artifact dirs (`path`) and/or tool calls (`tool`) with natural language schemas. Optional `batch_pattern` maps output files to cases in batch mode using `{n}` as a 1-based index
 - `traces` — execution data to capture: stdout/stderr, events, metrics (exit code, tokens, cost)
 - `judges` — inline `check` scripts, LLM `prompt`/`prompt_file`, external `module`/`function`. Optional `if` condition to skip judges per case based on annotations. Judges receive `outputs["annotations"]` from dataset `annotations.yaml`.
-- `thresholds` — regression detection per judge
+- `thresholds` — per-judge regression detection. Valid keys: `min_mean`, `min_pass_rate`, `min_win_rate`
 
 Runs are stored in `$AGENT_EVAL_RUNS_DIR` (default `eval/runs`), configured during `/eval-setup`.
 
