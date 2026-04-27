@@ -103,8 +103,8 @@ skill: my-skill-name
 execution:
   mode: case              # case (default) or batch
   arguments: "{prompt}"   # resolved per case from input.yaml fields
-  # timeout: 3600
-  # max_budget_usd: 5.0
+  # timeout: 3600            # Wall-clock timeout in seconds per invocation
+  # max_budget_usd: 5.0      # Cost cap in USD per invocation
   # env:                     # Inject env vars into workspace settings
   #   JIRA_SERVER: http://localhost:8080   # Literal value
   #   JIRA_TOKEN: $JIRA_TOKEN              # $VAR resolved from caller's env
@@ -112,9 +112,12 @@ execution:
 # Runner — agent harness + runner-specific knobs
 runner:
   type: claude-code
-  # settings: {}
-  # plugin_dirs: []
-  # env_strip: [JIRA_TOKEN]
+  # effort: high              # Reasoning effort: low | medium | high | xhigh | max
+  # settings: {}              # Arbitrary Claude Code settings merged into workspace
+  # plugin_dirs: []           # Directories to load plugins from
+  # env_strip: [JIRA_TOKEN]   # Env vars to strip from subprocess
+  # system_prompt: |          # Appended to Claude CLI system prompt
+  #   Custom instructions for the skill run.
 
 # Models — defaults for each role (CLI flags override)
 models:
@@ -159,6 +162,7 @@ inputs:
 outputs:
   # File artifacts on disk
   - path: artifacts
+    # batch_pattern: "RFE-{n:03d}"  # Map output files to cases in batch mode
     schema: |
       One markdown file per case, named NNN-slug.md where NNN is the
       case number (001, 002, ...).
@@ -240,15 +244,19 @@ judges:
 # Thresholds for regression detection
 thresholds:
   output_quality:
-    min_mean: 3.5
+    min_mean: 3.5            # Minimum average score
+  # has_content:
+  #   min_pass_rate: 1.0     # Minimum fraction of cases passing (0.0–1.0)
+  # pairwise:
+  #   min_win_rate: 0.6      # Minimum pairwise win rate
 ```
 
 ### Key concepts
 
-- **`execution`** — `mode` (`case` or `batch`), `arguments` template, and optional `env` for injecting environment variables into workspaces (`$VAR` syntax resolves from caller's environment). In `case` mode (default), the skill is invoked once per test case with `{field}` placeholders resolved from each case's input.yaml. In `batch` mode, all cases are bundled into batch.yaml for a single invocation.
+- **`execution`** — `mode` (`case` or `batch`), `arguments` template, optional `timeout` (wall-clock seconds per invocation), `max_budget_usd` (cost cap per invocation), and `env` for injecting environment variables into workspaces (`$VAR` syntax resolves from caller's environment). In `case` mode (default), the skill is invoked once per test case with `{field}` placeholders resolved from each case's input.yaml. In `batch` mode, all cases are bundled into batch.yaml for a single invocation.
 - **`schema`** — natural language description of structure. Used on `dataset` and each `outputs` entry. Agents and judges read these to understand the data.
 - **`inputs.tools`** — tool interception for headless and interactive execution. Each entry has a `match` (what to intercept) and a `prompt` (how to handle it). AskUserQuestion uses 3-tier answering: exact `case_overrides` → LLM call (`models.hook`) with case context (`input.yaml` + `answers.yaml`) → fallback to first option.
-- **`outputs`** — two types: `path` for file artifacts on disk, `tool` for tool call side effects (Jira, APIs). Both have `schema` descriptions.
+- **`outputs`** — two types: `path` for file artifacts on disk, `tool` for tool call side effects (Jira, APIs). Both have `schema` descriptions. Optional `batch_pattern` maps output files to cases in batch mode using `{n}` as a 1-based index (e.g. `"RFE-{n:03d}"` → `RFE-001`, `RFE-002`).
 - **`traces`** — execution data to capture: stdout/stderr logs, events (tool calls, reasoning text, results), metrics (exit code, tokens, cost, duration). Available to judges via the `outputs` dict.
 - **`check`** — inline Python snippet for deterministic validation. Receives an `outputs` dict with file contents, execution metadata, tool calls, logs, and `annotations` (from dataset `annotations.yaml`). Returns `(bool, str)`.
 - **`if`** — optional condition on a judge. Python expression evaluated against `annotations` and `outputs`. When false, the judge is skipped for that case (not counted in pass_rate or mean).
@@ -256,9 +264,10 @@ thresholds:
 - **`context`** — list of file paths loaded and appended to the LLM judge prompt as supplementary material (rubrics, guidelines, examples).
 - **`module`** / **`function`** — external Python code judge for complex validation.
 - **`permissions`** — tool access patterns (`allow`/`deny`) for headless execution. Generic across runners — each runner translates to its platform's mechanism.
-- **`runner`** — `type` discriminator selects the runner implementation; remaining fields (`settings`, `plugin_dirs`, `env_strip`, `system_prompt`) are runner-specific and ignored by other runners.
+- **`runner`** — `type` discriminator selects the runner implementation; remaining fields (`effort`, `settings`, `plugin_dirs`, `env_strip`, `system_prompt`) are runner-specific and ignored by other runners.
 - **`models`** — `skill`/`subagent`/`judge`/`hook` defaults, overridable per-judge or via CLI flags. `hook` is the model used for LLM-based AskUserQuestion answering.
 - **`mlflow`** — `experiment` (and optional `tracking_uri`/`tags`) for result logging.
+- **`thresholds`** — per-judge regression detection. Valid keys: `min_mean` (minimum average score), `min_pass_rate` (minimum fraction of cases passing, 0.0–1.0), `min_win_rate` (minimum pairwise win rate).
 
 ## Example: eval.yaml for RFE Creator
 

@@ -16,13 +16,17 @@ execution:
   # For batch skills: mode: batch, arguments: "--input batch.yaml --headless"
   # timeout: 3600         # Per-invocation wall-clock timeout (seconds)
   # max_budget_usd: 5.0   # Per-invocation cost cap
+  # env:                  # Inject env vars into workspace settings
+  #   JIRA_SERVER: http://localhost:8080   # Literal value
+  #   JIRA_TOKEN: $JIRA_TOKEN              # $VAR resolved from caller's env
 
 # Runner — agent harness + runner-specific knobs
 runner:
   type: claude-code              # Discriminator: claude-code, opencode, etc.
-  # settings: {}                 # Claude Code settings overrides
+  # effort: high                 # Reasoning effort: low | medium | high | xhigh | max
+  # settings: {}                 # Claude Code settings merged into workspace
   # plugin_dirs: []              # Plugin dirs for sub-skills the evaluated skill calls
-  # env_strip: [JIRA_TOKEN]      # Env vars to remove
+  # env_strip: [JIRA_TOKEN]      # Env vars to remove from subprocess
   # system_prompt: ""            # Appended to harness system prompt
 
 # Models — defaults for each role (CLI flags override)
@@ -30,6 +34,7 @@ models:
   skill: claude-opus-4-7         # Required (or pass --model)
   # subagent: claude-sonnet-4-7  # Defaults to skill model
   judge: claude-opus-4-7         # Used by LLM and pairwise judges
+  # hook: claude-sonnet-4-6     # Model for LLM-based AskUserQuestion answering
 
 # Permissions — tool access during headless execution
 permissions:
@@ -73,6 +78,7 @@ inputs:
 outputs:
   # File artifacts on disk
   - path: artifacts
+    # batch_pattern: "RFE-{n:03d}"  # Map output files to cases in batch mode
     schema: |
       One markdown file per case, named NNN-slug.md where NNN is the
       case number (001, 002, ...).
@@ -103,8 +109,9 @@ judges:
           return False, f"Output too short ({len(content.strip())} chars)"
       return True, f"Output has {len(content.strip())} chars"
 
-  # LLM judge with inline prompt
+  # LLM judge with inline prompt (conditional — skipped when condition is false)
   - name: output_quality
+    if: "not annotations.get('skip_quality', False)"  # Skip based on case annotations
     description: |
       Evaluate the quality of the generated output compared to the
       reference. Score 1-5.
@@ -155,4 +162,8 @@ judges:
 # Thresholds for regression detection
 thresholds:
   output_quality:
-    min_mean: 3.5
+    min_mean: 3.5            # Minimum average score
+  has_content:
+    min_pass_rate: 1.0       # Minimum fraction of cases passing (0.0–1.0)
+  # pairwise:
+  #   min_win_rate: 0.6      # Minimum pairwise win rate
