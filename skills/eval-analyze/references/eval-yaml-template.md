@@ -11,21 +11,25 @@ skill: <skill-name>
 
 # Execution — how the skill processes test cases (runner-agnostic)
 #
-# How to choose the mode:
-# - case (default): the skill expects ONE input and runs a pipeline on it.
-#   Signs: $ARGUMENTS is a single value (Jira key, prompt, file path),
-#   the skill runs phases sequentially on that input, then exits.
+# How to choose the mode — look at the skill's INTERNAL LOGIC:
+#
+# - batch: the skill is designed to process MULTIPLE items per invocation.
+#   Look at the skill's pipeline, not just its CLI flags. Signals:
+#   - It iterates over a collection of inputs (batch files, ID lists, arrays)
+#   - It has batch-size, parallelism, or concurrency controls
+#   - It launches multiple agents or sub-skills for different items
+#   - It aggregates results across items (summary tables, index files)
+#   - Its pipeline phases operate on a SET of items, not one
+#   A skill that supports both single and multi-item invocation is batch
+#   if its primary design processes collections.
+#   Examples: /rfe.speedrun (batch-creates, reviews, submits sets of RFEs),
+#             /rfe.auto-fix (processes N IDs with --batch-size)
+#
+# - case: the skill is fundamentally designed to process ONE input per run.
+#   No internal iteration, no batch controls, no multi-item aggregation.
 #   Examples: /test-plan.create RHAISTRAT-1520, /rfe.create "problem..."
 #
-# - batch: the skill accepts a BATCH FILE and processes multiple items
-#   in one invocation. Signs: the skill has --input flag that takes a
-#   YAML list, it iterates over entries internally, it has batch-size
-#   or parallelism controls (--batch-size, --parallel, --concurrency).
-#   Parallelism options are a strong signal — if the skill manages
-#   concurrency itself, it's doing batch processing.
-#   Examples: /rfe.speedrun --input batch.yaml, /rfe.auto-fix --input ids.yaml
-#
-# When in doubt, use case — it's safer (each case gets full isolation).
+# When in doubt, ask the user — don't silently default to case.
 execution:
   mode: case
   arguments: <argument template with {field} placeholders from input.yaml>
