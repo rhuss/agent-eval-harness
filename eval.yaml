@@ -31,10 +31,10 @@ runner:
 
 # Models — defaults for each role (CLI flags override)
 models:
-  skill: claude-opus-4-7         # Required (or pass --model)
+  skill: claude-opus-4-6         # Required (or pass --model)
   # subagent: claude-sonnet-4-7  # Defaults to skill model
-  judge: claude-opus-4-7         # Used by LLM and pairwise judges
-  # hook: claude-sonnet-4-6     # Model for LLM-based AskUserQuestion answering
+  judge: claude-opus-4-6         # Used by LLM and pairwise judges
+  # hook: claude-sonnet-4-6      # Model for LLM-based AskUserQuestion answering
 
 # Permissions — tool access during headless execution
 permissions:

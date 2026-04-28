@@ -52,10 +52,10 @@ runner:
 
 # Models — defaults for each role (CLI flags override)
 models:
-  skill: <model-id>         # Required (or pass --model)
-  # subagent: <model-id>    # Defaults to skill model
-  judge: <model-id>         # Used by LLM and pairwise judges
-  # hook: claude-haiku-4-5-20251001  # Model for LLM-based AskUserQuestion answering
+  skill: claude-opus-4-6         # Default for eval runs (or pass --model)
+  # subagent: claude-sonnet-4-6  # Defaults to skill model
+  judge: claude-opus-4-6         # LLM and pairwise judges need a strong model
+  # hook: claude-sonnet-4-6      # For AskUserQuestion answering (fast, cheaper than Opus)
 
 # Permissions for headless execution
 # The Skill tool requires explicit permission in --print mode.
