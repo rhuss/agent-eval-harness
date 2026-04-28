@@ -52,15 +52,30 @@ execution:
   reasoning: |
     <why you chose this mode — what you observed in the skill.
      This is analyzer-only context, not copied into eval.yaml.>
-  # mode guidance:
-  # case: the skill expects a single input (one problem, one Jira key, one file)
-  #   and runs a pipeline on it. $ARGUMENTS is a single value or a few fields.
+  # mode guidance — read the skill's LOGIC, not just its arguments:
+  #
+  # batch: the skill is DESIGNED to process multiple items in one invocation.
+  #   Look at the skill's internal logic, not just its CLI flags. Signals:
+  #   - The skill iterates over a list of inputs (loops, batch files, arrays)
+  #   - It has batch-size, parallelism, or concurrency controls
+  #   - It launches multiple agents or sub-skills for different items
+  #   - It aggregates results across items (summary tables, index files)
+  #   - Its pipeline phases operate on a SET of items, not one item
+  #   A skill that supports BOTH single-item and batch invocation is still
+  #   batch if its primary design processes collections. Don't confuse
+  #   "can accept one item" with "is designed for one item at a time."
+  #   Examples: /rfe.speedrun (batch-creates, batch-reviews, batch-submits),
+  #             /rfe.auto-fix (processes N IDs with --batch-size)
+  #
+  # case: the skill is fundamentally designed to process ONE input per run.
+  #   It runs a pipeline on a single item and exits. There is no internal
+  #   iteration, no batch controls, no multi-item aggregation.
   #   Examples: /rfe.create "problem statement", /test-plan.create RHAISTRAT-1520
-  # batch: the skill accepts a batch file (--input batch.yaml) and processes
-  #   multiple items in one invocation. It iterates over entries internally.
-  #   Strong signal: the skill has parallelism or batch-size controls
-  #   (--batch-size, --parallel, --concurrency).
-  #   Examples: /rfe.speedrun --input batch.yaml, /rfe.auto-fix --input ids.yaml
+  #
+  # When you cannot confidently determine the mode from the skill's logic,
+  # set mode to "ASK_USER" and explain what you observed in the reasoning
+  # field. The caller will ask the user to decide.
+  #
   # arguments examples:
   # For case mode: "{prompt}", "{strat_key} {adr_file?}"
   # For batch mode: "--input batch.yaml --headless --dry-run"
