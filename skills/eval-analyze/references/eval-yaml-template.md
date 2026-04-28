@@ -80,6 +80,15 @@ dataset:
 
 # Inputs — tool interception for headless execution
 #
+# The `match` field is NATURAL LANGUAGE — not a regex or glob. At workspace
+# setup time (before execution), eval-run's LLM agent reads these descriptions
+# and compiles them into concrete tool patterns, env checks, and input filters
+# in tool_handlers.yaml. At runtime, tools.py uses those compiled patterns.
+#
+# The `prompt` field has two roles:
+# - For AskUserQuestion: used at RUNTIME by the hook LLM to pick answers
+# - For other tools: used at DESIGN-TIME to generate env_checks/input_filters
+#
 # AskUserQuestion answering uses 3-tier resolution:
 #   1. Exact match from case_overrides (set in tool_handlers.yaml by eval-run)
 #   2. LLM call (models.hook) using the handler prompt + case context
@@ -111,8 +120,13 @@ outputs:
   - path: <output directory>
     schema: |
       <natural language description of artifacts in this directory>
-    # batch_pattern: "PREFIX-{n:03d}"  # For batch execution: {n} = 1-based case index
-    #                                   # Use "*" for shared dirs (copied to all cases)
+    # batch_pattern: "PREFIX-{n:03d}"
+    # Batch collection: maps output files to cases when the skill processes
+    # all cases in one invocation. {n} is a 1-based case index expanded to
+    # match output file prefixes (e.g., "RFE-{n:03d}" → "RFE-001", "RFE-002").
+    # Files whose name starts with the expanded prefix are assigned to that case.
+    # Use "*" for shared directories — content is copied to every case.
+    # If omitted, the collector auto-detects by common prefix patterns.
 
   # Tool call outputs (for side effects like API calls)
   # - tool: <tool_name_pattern>
@@ -234,6 +248,19 @@ Example check judge — find files by path prefix and read their content:
           if 'score' not in fm:
               return (False, f"{fname}: missing score")
       return (True, f"{len(reviews)} reviews valid")
+```
+
+**Error handling in check judges:** Use `.get()` with defaults for all dict lookups — if the skill produced no output or failed, keys may be missing. Return `(False, "reason")` for missing data rather than letting exceptions propagate:
+```yaml
+  - name: has_output
+    check: |
+      files = outputs.get("files", {})
+      if not files:
+          return (False, "No output files produced")
+      content = list(files.values())[0]
+      if len(content.strip()) < 50:
+          return (False, f"Output too short ({len(content.strip())} chars)")
+      return (True, f"{len(files)} files, {len(content)} chars")
 ```
 
 **LLM `prompt` judges** assess quality — things that need understanding:

@@ -8,7 +8,9 @@ You are analyzing a skill to understand what it does, what inputs it expects, an
 4. **Prompts and templates** — read any prompt files or templates referenced
 5. **Test cases** — if there's a dataset directory, read one sample case to understand the input structure
 
-The recursive part matters: a top-level skill might just orchestrate sub-skills, and the actual outputs (the files judges will score) come from a skill several levels deep. Follow sub-skill chains until you find the skills that produce the final artifacts — this is typically 2-5 levels. Cap at 5 levels to avoid circular references; if the chain goes deeper, summarize what you know. If a referenced sub-skill can't be found (maybe it's in a different plugin or the path is wrong), note it as unresolved in the `sub_skills` list and describe what you can infer from the reference — don't fabricate its contents.
+The recursive part matters: a top-level skill might just orchestrate sub-skills, and the actual outputs (the files judges will score) come from a skill several levels deep. Follow sub-skill chains until you find the skills that produce the final artifacts — this is typically 2-5 levels.
+
+**Cycle and depth protection:** Track visited skill names as you recurse. If you encounter a skill you've already visited, stop — note the cycle in `sub_skills` and move on. Cap at 5 levels regardless. If a referenced sub-skill can't be found (maybe it's in a different plugin or the path is wrong), note it as unresolved in the `sub_skills` list and describe what you can infer from the reference — don't fabricate its contents.
 
 ## Report format
 
@@ -52,29 +54,11 @@ execution:
   reasoning: |
     <why you chose this mode — what you observed in the skill.
      This is analyzer-only context, not copied into eval.yaml.>
-  # mode guidance — read the skill's LOGIC, not just its arguments:
-  #
-  # batch: the skill is DESIGNED to process multiple items in one invocation.
-  #   Look at the skill's internal logic, not just its CLI flags. Signals:
-  #   - The skill iterates over a list of inputs (loops, batch files, arrays)
-  #   - It has batch-size, parallelism, or concurrency controls
-  #   - It launches multiple agents or sub-skills for different items
-  #   - It aggregates results across items (summary tables, index files)
-  #   - Its pipeline phases operate on a SET of items, not one item
-  #   A skill that supports BOTH single-item and batch invocation is still
-  #   batch if its primary design processes collections. Don't confuse
-  #   "can accept one item" with "is designed for one item at a time."
-  #   Examples: /rfe.speedrun (batch-creates, batch-reviews, batch-submits),
-  #             /rfe.auto-fix (processes N IDs with --batch-size)
-  #
-  # case: the skill is fundamentally designed to process ONE input per run.
-  #   It runs a pipeline on a single item and exits. There is no internal
-  #   iteration, no batch controls, no multi-item aggregation.
-  #   Examples: /rfe.create "problem statement", /test-plan.create RHAISTRAT-1520
-  #
-  # When you cannot confidently determine the mode from the skill's logic,
-  # set mode to "ASK_USER" and explain what you observed in the reasoning
-  # field. The caller will ask the user to decide.
+  # Mode guidance: look at the skill's INTERNAL LOGIC, not just its CLI flags.
+  # See eval-yaml-template.md for the full selection criteria (batch signals
+  # vs case signals). Key rule: a skill that processes collections internally
+  # is batch even if it also accepts a single item.
+  # Set mode to "ASK_USER" if you cannot confidently determine from the logic.
   #
   # arguments examples:
   # For case mode: "{prompt}", "{strat_key} {adr_file?}"
