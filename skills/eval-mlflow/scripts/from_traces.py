@@ -50,50 +50,62 @@ def _attach_input_artifacts(extracted, experiment_id):
             runs = mlflow.search_runs(
                 experiment_ids=[experiment_id],
                 filter_string=f"tags.mlflow.runName = '{eval_run_id}'",
-                max_results=1,
             )
             if not runs.empty:
-                run_ids_by_name[eval_run_id] = runs.iloc[0].run_id
+                run_ids_by_name[eval_run_id] = list(runs.run_id)
         except Exception:
             continue
 
     if not run_ids_by_name:
         return
 
+    from pathlib import Path
+
     for entry in extracted:
         eval_run_id = entry.get("eval_run_id")
-        mlflow_run_id = run_ids_by_name.get(eval_run_id)
-        if not mlflow_run_id:
-            continue
+        mlflow_run_ids = run_ids_by_name.get(eval_run_id, [])
 
-        try:
-            artifacts = client.list_artifacts(mlflow_run_id, "inputs")
-        except Exception:
-            continue
+        best_batch = None
+        best_batch_size = 0
+        best_cases = {}
 
-        if not artifacts:
-            continue
-
-        with tempfile.TemporaryDirectory() as tmp:
+        for mlflow_run_id in mlflow_run_ids:
             try:
-                local_path = client.download_artifacts(mlflow_run_id, "inputs", tmp)
+                artifacts = client.list_artifacts(mlflow_run_id, "inputs")
             except Exception:
                 continue
 
-            from pathlib import Path
-            inputs_dir = Path(local_path)
+            if not artifacts:
+                continue
 
-            batch_path = inputs_dir / "batch.yaml"
-            if batch_path.exists():
-                entry["batch_yaml"] = yaml.safe_load(batch_path.read_text())
+            with tempfile.TemporaryDirectory() as tmp:
+                try:
+                    local_path = client.download_artifacts(
+                        mlflow_run_id, "inputs", tmp)
+                except Exception:
+                    continue
 
-            for case_dir in sorted(inputs_dir.iterdir()):
-                if case_dir.is_dir():
-                    inp = case_dir / "input.yaml"
-                    if inp.exists():
-                        entry.setdefault("case_inputs", {})[case_dir.name] = (
-                            yaml.safe_load(inp.read_text())
-                        )
+                inputs_dir = Path(local_path)
+
+                batch_path = inputs_dir / "batch.yaml"
+                if batch_path.exists():
+                    content = batch_path.read_text()
+                    if len(content) > best_batch_size:
+                        best_batch = yaml.safe_load(content)
+                        best_batch_size = len(content)
+
+                for case_dir in sorted(inputs_dir.iterdir()):
+                    if case_dir.is_dir():
+                        inp = case_dir / "input.yaml"
+                        if inp.exists():
+                            best_cases[case_dir.name] = (
+                                yaml.safe_load(inp.read_text())
+                            )
+
+        if best_batch is not None:
+            entry["batch_yaml"] = best_batch
+        if best_cases:
+            entry["case_inputs"] = best_cases
 
     enriched = sum(1 for e in extracted if "batch_yaml" in e or "case_inputs" in e)
     if enriched:
