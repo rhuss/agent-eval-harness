@@ -118,6 +118,18 @@ def validate_config(path="eval.yaml"):
     if not models.get("judge"):
         warnings.append("No models.judge — LLM/pairwise judges will need EVAL_JUDGE_MODEL or per-judge 'model:'")
 
+    # --- Thresholds ---
+    thresholds = config.get("thresholds") or {}
+    if not isinstance(thresholds, dict):
+        errors.append("thresholds must be a mapping of <judge_name>: <threshold_config>")
+        thresholds = {}
+    judge_names = {j.get("name", "") for j in judges if isinstance(j, dict) and j.get("name")}
+    for thresh_name in thresholds:
+        if thresh_name not in judge_names:
+            warnings.append(
+                f"thresholds.{thresh_name} references non-existent judge "
+                f"(available: {', '.join(sorted(judge_names)) or 'none'})")
+
     # --- Report ---
     if errors:
         for e in errors:

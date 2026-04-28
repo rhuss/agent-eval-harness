@@ -121,8 +121,8 @@ runner:
 
 # Models — defaults for each role (CLI flags override)
 models:
-  skill: claude-opus-4-7
-  judge: claude-opus-4-7
+  skill: claude-opus-4-6
+  judge: claude-opus-4-6
   # hook: claude-sonnet-4-6  # Model for LLM-based AskUserQuestion answering
 
 # MLflow logging target (optional)
@@ -280,8 +280,8 @@ execution:
 runner:
   type: claude-code
 models:
-  skill: claude-opus-4-7
-  judge: claude-opus-4-7
+  skill: claude-opus-4-6
+  judge: claude-opus-4-6
 mlflow:
   experiment: rfe-eval
 permissions:
