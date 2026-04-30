@@ -344,8 +344,8 @@ def _is_permission_denial(text: str) -> bool:
     """Check if a tool_result error text indicates a permission denial."""
     lower = text.lower()
     return any(phrase in lower for phrase in (
-        "permission", "denied", "not allowed", "disallowed",
-        "not permitted", "blocked",
+        "permission denied", "not allowed", "disallowed",
+        "not permitted", "user denied",
     ))
 
 

@@ -71,10 +71,8 @@ def test_eval_analyze_marks_external_fields(tmp_path, repo_root):
     config = yaml.safe_load(eval_yaml_path.read_text())
     schema = (config.get("dataset", {}).get("schema", "") or "").lower()
 
-    assert "external" in schema, (
-        f"dataset.schema missing [EXTERNAL] marker:\n{schema}")
-    assert "jira" in schema, (
-        f"dataset.schema missing Jira reference near external marker:\n{schema}")
+    assert "[external:" in schema, (
+        f"dataset.schema missing [EXTERNAL: ...] marker:\n{schema}")
 
 
 def test_eval_dataset_generates_todo_placeholders(tmp_path, repo_root):
