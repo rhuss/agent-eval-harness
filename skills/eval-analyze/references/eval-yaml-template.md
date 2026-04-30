@@ -217,14 +217,14 @@ Some input fields reference resources that must exist in an external system at e
 Mark these fields with `[EXTERNAL: System]` in the schema description:
 
 **Good** — external constraint is explicit:
-```
+```text
 - input.yaml: YAML file with 'project_key' ([EXTERNAL: Jira] — must be
   a real project key on the target Jira instance, e.g. RHEL or MYPROJECT)
   and 'summary' (free text describing the issue to search for).
 ```
 
 **Bad** — no indication the value must exist externally:
-```
+```text
 - input.yaml: YAML file with 'project_key' (Jira project key)
   and 'summary' (issue description).
 ```

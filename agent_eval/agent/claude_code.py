@@ -312,6 +312,13 @@ class ClaudeCodeRunner(EvalRunner):
         return env
 
 
+def _sanitize_for_log(text: str, max_len: int = 80) -> str:
+    """Strip newlines and non-printable characters from text for safe logging."""
+    text = text.replace("\r", " ").replace("\n", " ")
+    text = "".join(ch for ch in text if ch.isprintable())
+    return text[:max_len]
+
+
 def _is_permission_denial(text: str) -> bool:
     """Check if a tool_result error text indicates a permission denial."""
     lower = text.lower()
@@ -340,7 +347,7 @@ def _extract_progress(obj: dict) -> str:
                     else:
                         text = ""
                     if text and _is_permission_denial(text):
-                        return f"PERMISSION DENIED: {text[:80]}"
+                        return f"PERMISSION DENIED: {_sanitize_for_log(text)}"
         return ""
 
     elif t == "assistant":

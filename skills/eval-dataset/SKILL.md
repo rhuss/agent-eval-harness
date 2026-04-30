@@ -124,7 +124,7 @@ case-005-ambiguous-phrasing/
 
 **Realism**: Cases should look like something a real user would encounter. Don't generate lorem ipsum or obviously synthetic inputs. Use realistic names, scenarios, and domain language appropriate to the skill.
 
-**External-state placeholders**: For fields marked `[EXTERNAL: System]` in the schema, use `TODO_<SYSTEM>_<FIELD>` as the value (e.g., `TODO_JIRA_PROJECT_KEY: MYPROJECT`). The value after the colon is a plausible example for reference, but the `TODO_` prefix signals that this must be replaced with a real value from the target system before execution. List all placeholders in Step 7 so the user knows what needs manual review.
+**External-state placeholders**: For fields marked `[EXTERNAL: System]` in the schema, use `TODO_<SYSTEM>_<FIELD>` as the value (e.g., `project_key: "TODO_JIRA_PROJECT_KEY"`). If you want to show a plausible real value, put it in a YAML comment (e.g., `# replace with real key, such as MYPROJECT`). The `TODO_` prefix signals that this must be replaced with a real value from the target system before execution. List all placeholders in Step 7 so the user knows what needs manual review.
 
 **Answers for interactive skills**: If eval.yaml has `inputs.tools` entries for AskUserQuestion, the skill asks questions during execution. The hook uses LLM-based answering (via `models.hook`) that reads `input.yaml` and `answers.yaml` from each case as context. Create `answers.yaml` with **guidance** that tells the LLM how to answer domain-specific questions for this case:
 
