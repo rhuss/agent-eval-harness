@@ -13,6 +13,16 @@ sys.path.insert(0, str(_repo_root / "skills" / "eval-mlflow" / "scripts"))
 
 
 # ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def repo_root():
+    """Absolute path to the agent-eval-harness repository root."""
+    return _repo_root
+
+
+# ---------------------------------------------------------------------------
 # Factory functions — build individual stream-json events
 # ---------------------------------------------------------------------------
 
