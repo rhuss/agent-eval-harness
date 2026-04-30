@@ -102,6 +102,6 @@ After the YAML block, explain:
 3. Any edge cases or failure modes you noticed
 4. What evaluation criteria would be most valuable
 5. Which sub-skill's outputs are the ones that matter for scoring
-6. Which tools and scripts interact with external services — look for AskUserQuestion (needs auto-answers), MCP tools calling external APIs (Jira, Slack, etc.), AND Python scripts that import API clients or call external URLs. These all need `inputs.tools` entries in eval.yaml so headless eval can intercept them.
+6. Which tools and scripts interact with external services — look for AskUserQuestion (needs auto-answers), MCP tools calling external APIs (Jira, Slack, etc.), AND Python scripts that import API clients or call external URLs. These all need `inputs.tools` entries in eval.yaml so headless eval can intercept them. Also identify which **input fields** reference real external state (e.g., a Jira project key that must exist on the target instance, a GitHub repo URL that must be accessible, a Slack channel ID). These fields cannot be synthesized by eval-dataset — list them so eval-analyze can mark them with `[EXTERNAL: System]` in the dataset schema.
 
 Be thorough but concise. Reference actual file paths and field names you observed — don't invent generic examples.

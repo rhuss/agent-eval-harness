@@ -210,6 +210,27 @@ Cases contain input files and reference outputs.
 
 The difference: a good schema lets judges write `outputs["main_content"]` knowing what to expect. A bad schema forces them to guess.
 
+### External-State Fields
+
+Some input fields reference resources that must exist in an external system at execution time — Jira project keys, GitHub repo URLs, Slack channel IDs, API endpoints. If eval-dataset doesn't know a field is externally constrained, it will invent plausible but invalid values (e.g., `AGENTREADY` as a Jira project key derived from the repo directory name), causing silent failures at eval-run time.
+
+Mark these fields with `[EXTERNAL: System]` in the schema description:
+
+**Good** — external constraint is explicit:
+```
+- input.yaml: YAML file with 'project_key' ([EXTERNAL: Jira] — must be
+  a real project key on the target Jira instance, e.g. RHEL or MYPROJECT)
+  and 'summary' (free text describing the issue to search for).
+```
+
+**Bad** — no indication the value must exist externally:
+```
+- input.yaml: YAML file with 'project_key' (Jira project key)
+  and 'summary' (issue description).
+```
+
+The `[EXTERNAL]` marker tells `/eval-dataset` to generate `TODO_` placeholder values instead of fabricating realistic-looking but invalid data. Users must replace these placeholders with real values before running `/eval-run`.
+
 ## Writing Good Judges
 
 **Inline `check` judges** validate structure — things that can be verified deterministically:
