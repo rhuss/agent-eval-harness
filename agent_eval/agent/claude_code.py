@@ -198,8 +198,9 @@ class ClaudeCodeRunner(EvalRunner):
             per_model_turns = _per_model_turns(
                 workspace / "subagents", stream_ids_by_model)
             timeout_stderr = f"Timed out after {timeout_s}s"
-            if permission_denials:
-                timeout_stderr += (f"\nWARNING: {permission_denials} permission "
+            denial_list = _extract_denial_list(result_obj, permission_denials)
+            if denial_list:
+                timeout_stderr += (f"\nWARNING: {len(denial_list)} permission "
                                    f"denial(s) detected during execution")
             return RunResult(
                 exit_code=-1,
@@ -213,6 +214,7 @@ class ClaudeCodeRunner(EvalRunner):
                 models_used=sorted(models_seen) if models_seen else None,
                 per_model_usage=per_model_usage,
                 per_model_turns=per_model_turns,
+                permission_denials=denial_list,
             )
         except Exception as e:
             duration = time.monotonic() - start
@@ -251,8 +253,9 @@ class ClaudeCodeRunner(EvalRunner):
         per_model_turns = _per_model_turns(
             workspace / "subagents", stream_ids_by_model)
 
-        if permission_denials:
-            denial_msg = (f"\nWARNING: {permission_denials} permission "
+        denial_list = _extract_denial_list(result_obj, permission_denials)
+        if denial_list:
+            denial_msg = (f"\nWARNING: {len(denial_list)} permission "
                           f"denial(s) detected during execution")
             stderr = (stderr or "") + denial_msg
 
@@ -268,6 +271,7 @@ class ClaudeCodeRunner(EvalRunner):
             models_used=sorted(models_seen) if models_seen else None,
             per_model_usage=per_model_usage,
             per_model_turns=per_model_turns,
+            permission_denials=denial_list,
             raw_output=raw_output,
         )
 
@@ -310,6 +314,23 @@ class ClaudeCodeRunner(EvalRunner):
         if self._mlflow_tracking_uri:
             env["MLFLOW_TRACKING_URI"] = self._mlflow_tracking_uri
         return env
+
+
+def _extract_denial_list(result_obj, streaming_count):
+    """Build the permission_denials list for RunResult.
+
+    Prefers the structured ``permission_denials`` array from the CLI
+    ``result`` event (available since Claude Code 2.x).  Falls back to
+    a synthetic list derived from the streaming keyword counter when the
+    result event is absent (e.g. timeout before result is emitted).
+    """
+    if isinstance(result_obj, dict):
+        denials = result_obj.get("permission_denials")
+        if isinstance(denials, list) and denials:
+            return denials
+    if streaming_count:
+        return [{"tool_name": "unknown"}] * streaming_count
+    return None
 
 
 def _sanitize_for_log(text: str, max_len: int = 80) -> str:

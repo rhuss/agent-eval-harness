@@ -71,7 +71,8 @@ def make_assistant(msg_id, tools=None, text=None, model="claude-sonnet-4-5",
     return event
 
 
-def make_result(cost_usd=0.15, num_turns=10, model_usage=None):
+def make_result(cost_usd=0.15, num_turns=10, model_usage=None,
+                permission_denials=None):
     """Build a result event."""
     event = {
         "type": "result",
@@ -80,6 +81,8 @@ def make_result(cost_usd=0.15, num_turns=10, model_usage=None):
     }
     if model_usage:
         event["modelUsage"] = model_usage
+    if permission_denials is not None:
+        event["permission_denials"] = permission_denials
     return event
 
 
