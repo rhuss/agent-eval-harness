@@ -77,13 +77,18 @@ def make_user(tool_results=None, text=None):
     """Build a user event.
 
     Args:
-        tool_results: list of (tool_use_id, content_text) tuples.
+        tool_results: list of tuples. Each tuple is either
+            (tool_use_id, content_text) or
+            (tool_use_id, content_text, is_error).
     """
     if tool_results:
-        content = [
-            {"type": "tool_result", "tool_use_id": tuid, "content": txt}
-            for tuid, txt in tool_results
-        ]
+        content = []
+        for item in tool_results:
+            tuid, txt = item[0], item[1]
+            block = {"type": "tool_result", "tool_use_id": tuid, "content": txt}
+            if len(item) > 2 and item[2]:
+                block["is_error"] = True
+            content.append(block)
     elif text:
         content = text
     else:

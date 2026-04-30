@@ -1,6 +1,6 @@
 """Tests for _extract_progress in claude_code.py — progress display filtering."""
 
-from conftest import make_assistant, make_result
+from conftest import make_assistant, make_result, make_user
 
 from agent_eval.agent.claude_code import _extract_progress
 
@@ -24,3 +24,27 @@ def test_result_event_shows_summary():
     """Result event shows turn count and cost."""
     event = make_result(cost_usd=0.15, num_turns=10)
     assert _extract_progress(event) == "Done (10 turns, $0.15)"
+
+
+def test_permission_denial_detected():
+    """User event with is_error and denial text surfaces a warning."""
+    event = make_user(tool_results=[
+        ("tu_001", "The user denied this tool call. Reason: not in allow list", True),
+    ])
+    result = _extract_progress(event)
+    assert result.startswith("PERMISSION DENIED:")
+    assert "denied" in result
+
+
+def test_non_permission_error_ignored():
+    """User event with is_error but non-permission text returns empty."""
+    event = make_user(tool_results=[
+        ("tu_001", "Error: file not found /tmp/missing.txt", True),
+    ])
+    assert _extract_progress(event) == ""
+
+
+def test_normal_tool_result_ignored():
+    """User event with a normal tool_result (no error) returns empty."""
+    event = make_user(tool_results=[("tu_001", "file contents here")])
+    assert _extract_progress(event) == ""

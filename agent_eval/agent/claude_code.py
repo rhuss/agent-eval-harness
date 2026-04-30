@@ -151,6 +151,7 @@ class ClaudeCodeRunner(EvalRunner):
 
             result_obj = None
             resolved_model = None
+            permission_denials = 0
 
             for line in proc.stdout:
                 if time.monotonic() > deadline:
@@ -169,6 +170,8 @@ class ClaudeCodeRunner(EvalRunner):
                             resolved_model = obj.get("model")
                         msg = _extract_progress(obj)
                         if msg:
+                            if msg.startswith("PERMISSION DENIED"):
+                                permission_denials += 1
                             with _print_lock:
                                 print(f"  {self._log_prefix} | {msg}", flush=True)
                         if obj.get("type") == "result":
@@ -194,10 +197,14 @@ class ClaudeCodeRunner(EvalRunner):
                 num_turns = (num_turns or 0) + subagent_turns
             per_model_turns = _per_model_turns(
                 workspace / "subagents", stream_ids_by_model)
+            timeout_stderr = f"Timed out after {timeout_s}s"
+            if permission_denials:
+                timeout_stderr += (f"\nWARNING: {permission_denials} permission "
+                                   f"denial(s) detected during execution")
             return RunResult(
                 exit_code=-1,
                 stdout="\n".join(stdout_lines),
-                stderr=f"Timed out after {timeout_s}s",
+                stderr=timeout_stderr,
                 duration_s=duration,
                 token_usage=token_usage,
                 cost_usd=cost_usd,
@@ -243,6 +250,11 @@ class ClaudeCodeRunner(EvalRunner):
             num_turns = (num_turns or 0) + subagent_turns
         per_model_turns = _per_model_turns(
             workspace / "subagents", stream_ids_by_model)
+
+        if permission_denials:
+            denial_msg = (f"\nWARNING: {permission_denials} permission "
+                          f"denial(s) detected during execution")
+            stderr = (stderr or "") + denial_msg
 
         return RunResult(
             exit_code=proc.returncode,
@@ -300,11 +312,38 @@ class ClaudeCodeRunner(EvalRunner):
         return env
 
 
+def _is_permission_denial(text: str) -> bool:
+    """Check if a tool_result error text indicates a permission denial."""
+    lower = text.lower()
+    return any(phrase in lower for phrase in (
+        "permission", "denied", "not allowed", "disallowed",
+        "not permitted", "blocked",
+    ))
+
+
 def _extract_progress(obj: dict) -> str:
     """Extract a human-readable progress message from a stream-json event."""
     t = obj.get("type")
 
-    if t == "assistant":
+    if t == "user":
+        msg = obj.get("message", {})
+        content = msg.get("content", [])
+        if isinstance(content, list):
+            for block in content:
+                if block.get("type") == "tool_result" and block.get("is_error"):
+                    c = block.get("content", "")
+                    if isinstance(c, str):
+                        text = c
+                    elif isinstance(c, list):
+                        text = " ".join(
+                            x.get("text", "") for x in c if isinstance(x, dict))
+                    else:
+                        text = ""
+                    if text and _is_permission_denial(text):
+                        return f"PERMISSION DENIED: {text[:80]}"
+        return ""
+
+    elif t == "assistant":
         # Skip foreground subagent messages to avoid duplicate progress lines
         if obj.get("parent_tool_use_id"):
             return ""
