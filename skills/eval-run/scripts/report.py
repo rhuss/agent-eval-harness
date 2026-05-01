@@ -16,9 +16,13 @@ Usage:
 import argparse
 import base64
 import difflib
+import hashlib
 import json
 import os
+import platform
+import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -202,6 +206,71 @@ def _find_gold_standard_image(case_id: str, dataset_path: str):
                     and not candidate.is_symlink()):
                 return candidate
     return None
+
+
+_DIAGRAM_SUFFIXES = {".d2", ".drawio"}
+
+
+def _render_d2_to_svg(d2_path: Path) -> str:
+    """Render a D2 file to SVG. Returns SVG text or empty string."""
+    salt = hashlib.md5(str(d2_path).encode()).hexdigest()[:8]
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
+            tmp_path = tmp.name
+        subprocess.run(
+            ["d2", "--bundle", "--salt", salt, str(d2_path), tmp_path],
+            check=True, capture_output=True, text=True, timeout=30,
+        )
+        return Path(tmp_path).read_text()
+    except (FileNotFoundError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired, OSError):
+        return ""
+    finally:
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except (NameError, OSError):
+            pass
+
+
+def _render_drawio_to_svg(drawio_path: Path) -> str:
+    """Render a drawio file to SVG. Returns SVG text or empty string."""
+    cli = ("/Applications/draw.io.app/Contents/MacOS/draw.io"
+           if platform.system() == "Darwin" else "drawio")
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
+            tmp_path = tmp.name
+        subprocess.run(
+            [cli, "-x", "-f", "svg", "--embed-svg-fonts", "false",
+             "-o", tmp_path, str(drawio_path)],
+            check=True, capture_output=True, text=True, timeout=30,
+        )
+        return Path(tmp_path).read_text()
+    except (FileNotFoundError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired, OSError):
+        return ""
+    finally:
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except (NameError, OSError):
+            pass
+
+
+def _svg_to_data_uri(svg_text: str) -> str:
+    data = base64.b64encode(svg_text.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{data}"
+
+
+def _try_render_diagram(path: Path, sibling_names: set) -> str:
+    """Try to render a diagram file to SVG. Returns data URI or empty string."""
+    if path.suffix == ".d2":
+        svg = _render_d2_to_svg(path)
+        return _svg_to_data_uri(svg) if svg else ""
+    if path.suffix == ".drawio":
+        if f"{path.name}.png" in sibling_names:
+            return ""
+        svg = _render_drawio_to_svg(path)
+        return _svg_to_data_uri(svg) if svg else ""
+    return ""
 
 
 def _read_case_input(dataset_path: str, case_id: str) -> str:
@@ -471,6 +540,12 @@ a:hover { text-decoration: underline; }
 .img-compare-onion-wrap > img { grid-area: 1/1; display: block; width: 100%; height: auto; }
 .img-compare-onion input[type="range"] { display: block; width: 100%; margin: 8px 0 0; accent-color: var(--accent); }
 .img-compare-onion .onion-label { text-align: center; font-size: 0.82em; color: var(--text-muted); margin-top: 2px; }
+
+/* Diagram source collapsible */
+.diagram-source { margin-top: 0.4em; }
+.diagram-source summary { font-size: 0.85em; color: var(--text-muted); cursor: pointer; padding: 4px 0; }
+.diagram-source summary:hover { color: var(--text); }
+.diagram-source pre { max-height: 400px; overflow-y: auto; }
 """
 
 THEME_SCRIPT = """
@@ -1752,6 +1827,28 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                             size = f.stat().st_size
                             html += (f'<div class="file-badge">{_esc(str(rel))} '
                                      f'<span class="skip">({size} bytes, unreadable)</span></div>\n')
+                    elif f.suffix in _DIAGRAM_SUFFIXES:
+                        sibling_names = {s.name for s in f.parent.iterdir()}
+                        svg_uri = _try_render_diagram(f, sibling_names)
+                        if svg_uri:
+                            html += f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                            if gold_data_uri:
+                                html += _render_image_compare(
+                                    svg_uri, gold_data_uri,
+                                    gen_label="Generated",
+                                    ref_label="Gold Standard",
+                                    ref_class="img-label-ref")
+                            else:
+                                html += _render_standalone_image(svg_uri, str(rel))
+                            source = _read_text(f, max_lines=200)
+                            if source:
+                                html += (f'<details class="diagram-source"><summary>Source</summary>\n'
+                                         f'<pre class="output">{_esc(source)}</pre></details>\n')
+                        else:
+                            content = _read_text(f, max_lines=200)
+                            if content:
+                                html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                         f'<pre class="output">{_esc(content)}</pre>\n')
                     else:
                         content = _read_text(f, max_lines=200)
                         if content:
@@ -1796,6 +1893,25 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                             diffs.append((f"{out_path}/{name} (deleted)",
                                 _render_standalone_image(base_uri, f"{name} (baseline)")))
                         continue
+                    # Diagram comparison (render to SVG)
+                    if name.endswith(tuple(_DIAGRAM_SUFFIXES)):
+                        sib_c = {s.name for s in curr_dir.iterdir()} if curr_dir.exists() else set()
+                        sib_b = {s.name for s in base_dir.iterdir()} if base_dir.exists() else set()
+                        curr_uri = _try_render_diagram(curr_f, sib_c) if curr_f else ""
+                        base_uri = _try_render_diagram(base_f, sib_b) if base_f else ""
+                        if curr_uri and base_uri:
+                            diffs.append((f"{out_path}/{name}",
+                                _render_image_compare(
+                                    curr_uri, base_uri,
+                                    gen_label="Current",
+                                    ref_label="Baseline",
+                                    ref_class="img-label-bl")))
+                        elif curr_uri:
+                            diffs.append((f"{out_path}/{name}",
+                                _render_standalone_image(curr_uri, name)))
+                        # Fall through to text diff if rendering failed
+                        if curr_uri or base_uri:
+                            continue
                     # Text comparison
                     try:
                         ct = curr_f.read_text() if curr_f else ""
