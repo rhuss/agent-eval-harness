@@ -181,9 +181,12 @@ def _find_gold_standard_image(case_id: str, dataset_path: str):
     """Find a gold standard image for a case from the dataset annotations."""
     if not dataset_path:
         return None
-    case_ds = Path(dataset_path) / case_id
+    dataset_root = Path(dataset_path).resolve()
+    case_ds = (dataset_root / case_id).resolve()
+    if not case_ds.is_relative_to(dataset_root):
+        return None
     ann_path = case_ds / "annotations.yaml"
-    if not ann_path.is_file():
+    if not ann_path.is_file() or ann_path.is_symlink():
         return None
     ann = _load_yaml(ann_path)
     gold_name = ann.get("gold_diagram")
@@ -193,8 +196,10 @@ def _find_gold_standard_image(case_id: str, dataset_path: str):
     full_stem = gold_name  # e.g. "gold-standard.drawio"
     for suffix in _IMAGE_SUFFIXES:
         for candidate_name in [f"{full_stem}{suffix}", f"{stem}{suffix}"]:
-            candidate = case_ds / candidate_name
-            if candidate.is_file():
+            candidate = (case_ds / candidate_name).resolve()
+            if (candidate.is_relative_to(dataset_root)
+                    and candidate.is_file()
+                    and not candidate.is_symlink()):
                 return candidate
     return None
 
@@ -1787,6 +1792,9 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                         elif curr_uri:
                             diffs.append((f"{out_path}/{name} (new)",
                                 _render_standalone_image(curr_uri, name)))
+                        elif base_uri:
+                            diffs.append((f"{out_path}/{name} (deleted)",
+                                _render_standalone_image(base_uri, f"{name} (baseline)")))
                         continue
                     # Text comparison
                     try:
@@ -1826,6 +1834,8 @@ def _wrap_section(content: str) -> str:
 def generate_report(config, summary, run_result, run_dir,
                     review=None, baseline_dir=None,
                     baseline_summary=None, baseline_result=None):
+    global _img_compare_counter
+    _img_compare_counter = 0
     name = config.get("name", "Eval")
     run_id = summary.get("run_id", run_dir.name)
 
@@ -1853,8 +1863,6 @@ def generate_report(config, summary, run_result, run_dir,
     html += _wrap_section(_render_regressions(summary, config))
     html += _wrap_section(_render_shared_outputs(run_dir, config))
     html += _render_per_case(summary, run_dir, config, baseline_dir, review)
-    global _img_compare_counter
-    _img_compare_counter = 0
     html += f"\n<script>{TOGGLE_SCRIPT}</script>\n"
     html += f"<script>{IMAGE_COMPARE_SCRIPT}</script>\n"
     html += "</body>\n</html>\n"
