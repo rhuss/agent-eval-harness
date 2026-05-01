@@ -56,6 +56,8 @@ Read `dataset.schema` and extract a concrete checklist:
 
 6. **Argument fields** — if `execution.mode` is `case`, parse `execution.arguments` for `{field}` placeholders. Every placeholder must appear as a required field in input.yaml. Cross-check against items 1-2 above — if `{strat_key}` is in the arguments but not in the schema, add it as a required field.
 
+7. **External-state fields** — look for fields marked with `[EXTERNAL: System]` in the schema description. These reference real resources in external systems (Jira projects, GitHub repos, API endpoints) that must exist at execution time. Do NOT invent values for these fields — fabricated values (e.g., a Jira project key derived from the repo directory name) cause silent failures when the skill queries the external system and gets zero results. Mark these in your generation template as requiring `TODO_` placeholder values (see Step 5).
+
 This checklist is your generation template. Every case must satisfy items 1-2 and 6. Items 3-4 guide content variety.
 
 ## Step 3: Assess Current State
@@ -122,6 +124,8 @@ case-005-ambiguous-phrasing/
 
 **Realism**: Cases should look like something a real user would encounter. Don't generate lorem ipsum or obviously synthetic inputs. Use realistic names, scenarios, and domain language appropriate to the skill.
 
+**External-state placeholders**: For fields marked `[EXTERNAL: System]` in the schema, use `TODO_<SYSTEM>_<FIELD>` as the value (e.g., `project_key: "TODO_JIRA_PROJECT_KEY"`). If you want to show a plausible real value, put it in a YAML comment (e.g., `# replace with real key, such as MYPROJECT`). The `TODO_` prefix signals that this must be replaced with a real value from the target system before execution. List all placeholders in Step 7 so the user knows what needs manual review.
+
 **Answers for interactive skills**: If eval.yaml has `inputs.tools` entries for AskUserQuestion, the skill asks questions during execution. The hook uses LLM-based answering (via `models.hook`) that reads `input.yaml` and `answers.yaml` from each case as context. Create `answers.yaml` with **guidance** that tells the LLM how to answer domain-specific questions for this case:
 
 ```yaml
@@ -175,6 +179,7 @@ Tell the user what was created:
 - **Strategy used**: bootstrap / expand / from-traces
 - **Coverage**: What scenarios are now covered (simple, complex, edge cases)
 - **What's missing**: Reference outputs (if not generated), any gaps still remaining
+- **External-state placeholders**: If any `TODO_` placeholder values were generated, list each one with which case it's in, which external system it references, and what kind of value is needed (e.g., "case-001/input.yaml `TODO_JIRA_PROJECT_KEY` — needs a real Jira project key from your test instance"). These MUST be replaced with real values before running `/eval-run`.
 - **Next steps** (include `--config <config>` if a non-default config was used):
   - `/eval-run --model <model>` to test the skill against these cases
   - `/eval-run --model <model> --gold` to generate gold references from the best outputs

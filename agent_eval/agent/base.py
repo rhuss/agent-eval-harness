@@ -25,6 +25,7 @@ class RunResult:
     models_used: Optional[list] = None   # All distinct models observed
     per_model_usage: Optional[dict] = None  # Per-model token/cost breakdown
     per_model_turns: Optional[dict] = None  # Per-model assistant turn count
+    permission_denials: Optional[list] = None  # [{tool_name, tool_use_id, tool_input}]
     raw_output: Optional[dict] = None  # Runner-specific parsed output
 
 

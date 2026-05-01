@@ -151,6 +151,7 @@ class ClaudeCodeRunner(EvalRunner):
 
             result_obj = None
             resolved_model = None
+            permission_denials = 0
 
             for line in proc.stdout:
                 if time.monotonic() > deadline:
@@ -169,6 +170,8 @@ class ClaudeCodeRunner(EvalRunner):
                             resolved_model = obj.get("model")
                         msg = _extract_progress(obj)
                         if msg:
+                            if msg.startswith("PERMISSION DENIED"):
+                                permission_denials += 1
                             with _print_lock:
                                 print(f"  {self._log_prefix} | {msg}", flush=True)
                         if obj.get("type") == "result":
@@ -194,10 +197,15 @@ class ClaudeCodeRunner(EvalRunner):
                 num_turns = (num_turns or 0) + subagent_turns
             per_model_turns = _per_model_turns(
                 workspace / "subagents", stream_ids_by_model)
+            timeout_stderr = f"Timed out after {timeout_s}s"
+            denial_list = _extract_denial_list(result_obj, permission_denials)
+            if denial_list:
+                timeout_stderr += (f"\nWARNING: {len(denial_list)} permission "
+                                   f"denial(s) detected during execution")
             return RunResult(
                 exit_code=-1,
                 stdout="\n".join(stdout_lines),
-                stderr=f"Timed out after {timeout_s}s",
+                stderr=timeout_stderr,
                 duration_s=duration,
                 token_usage=token_usage,
                 cost_usd=cost_usd,
@@ -206,6 +214,7 @@ class ClaudeCodeRunner(EvalRunner):
                 models_used=sorted(models_seen) if models_seen else None,
                 per_model_usage=per_model_usage,
                 per_model_turns=per_model_turns,
+                permission_denials=denial_list,
             )
         except Exception as e:
             duration = time.monotonic() - start
@@ -244,6 +253,12 @@ class ClaudeCodeRunner(EvalRunner):
         per_model_turns = _per_model_turns(
             workspace / "subagents", stream_ids_by_model)
 
+        denial_list = _extract_denial_list(result_obj, permission_denials)
+        if denial_list:
+            denial_msg = (f"\nWARNING: {len(denial_list)} permission "
+                          f"denial(s) detected during execution")
+            stderr = (stderr or "") + denial_msg
+
         return RunResult(
             exit_code=proc.returncode,
             stdout=stdout_text,
@@ -256,6 +271,7 @@ class ClaudeCodeRunner(EvalRunner):
             models_used=sorted(models_seen) if models_seen else None,
             per_model_usage=per_model_usage,
             per_model_turns=per_model_turns,
+            permission_denials=denial_list,
             raw_output=raw_output,
         )
 
@@ -300,11 +316,62 @@ class ClaudeCodeRunner(EvalRunner):
         return env
 
 
+def _extract_denial_list(result_obj, streaming_count):
+    """Build the permission_denials list for RunResult.
+
+    Prefers the structured ``permission_denials`` array from the CLI
+    ``result`` event (available since Claude Code 2.x).  Falls back to
+    a synthetic list derived from the streaming keyword counter when the
+    result event is absent (e.g. timeout before result is emitted).
+    """
+    if isinstance(result_obj, dict):
+        denials = result_obj.get("permission_denials")
+        if isinstance(denials, list) and denials:
+            return denials
+    if streaming_count:
+        return [{"tool_name": "unknown"}] * streaming_count
+    return None
+
+
+def _sanitize_for_log(text: str, max_len: int = 80) -> str:
+    """Strip newlines and non-printable characters from text for safe logging."""
+    text = text.replace("\r", " ").replace("\n", " ")
+    text = "".join(ch for ch in text if ch.isprintable())
+    return text[:max_len]
+
+
+def _is_permission_denial(text: str) -> bool:
+    """Check if a tool_result error text indicates a permission denial."""
+    lower = text.lower()
+    return any(phrase in lower for phrase in (
+        "permission denied", "not allowed", "disallowed",
+        "not permitted", "user denied",
+    ))
+
+
 def _extract_progress(obj: dict) -> str:
     """Extract a human-readable progress message from a stream-json event."""
     t = obj.get("type")
 
-    if t == "assistant":
+    if t == "user":
+        msg = obj.get("message", {})
+        content = msg.get("content", [])
+        if isinstance(content, list):
+            for block in content:
+                if block.get("type") == "tool_result" and block.get("is_error"):
+                    c = block.get("content", "")
+                    if isinstance(c, str):
+                        text = c
+                    elif isinstance(c, list):
+                        text = " ".join(
+                            x.get("text", "") for x in c if isinstance(x, dict))
+                    else:
+                        text = ""
+                    if text and _is_permission_denial(text):
+                        return f"PERMISSION DENIED: {_sanitize_for_log(text)}"
+        return ""
+
+    elif t == "assistant":
         # Skip foreground subagent messages to avoid duplicate progress lines
         if obj.get("parent_tool_use_id"):
             return ""

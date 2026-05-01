@@ -13,6 +13,16 @@ sys.path.insert(0, str(_repo_root / "skills" / "eval-mlflow" / "scripts"))
 
 
 # ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def repo_root():
+    """Absolute path to the agent-eval-harness repository root."""
+    return _repo_root
+
+
+# ---------------------------------------------------------------------------
 # Factory functions — build individual stream-json events
 # ---------------------------------------------------------------------------
 
@@ -61,7 +71,8 @@ def make_assistant(msg_id, tools=None, text=None, model="claude-sonnet-4-5",
     return event
 
 
-def make_result(cost_usd=0.15, num_turns=10, model_usage=None):
+def make_result(cost_usd=0.15, num_turns=10, model_usage=None,
+                permission_denials=None):
     """Build a result event."""
     event = {
         "type": "result",
@@ -70,6 +81,8 @@ def make_result(cost_usd=0.15, num_turns=10, model_usage=None):
     }
     if model_usage:
         event["modelUsage"] = model_usage
+    if permission_denials is not None:
+        event["permission_denials"] = permission_denials
     return event
 
 
@@ -77,13 +90,18 @@ def make_user(tool_results=None, text=None):
     """Build a user event.
 
     Args:
-        tool_results: list of (tool_use_id, content_text) tuples.
+        tool_results: list of tuples. Each tuple is either
+            (tool_use_id, content_text) or
+            (tool_use_id, content_text, is_error).
     """
     if tool_results:
-        content = [
-            {"type": "tool_result", "tool_use_id": tuid, "content": txt}
-            for tuid, txt in tool_results
-        ]
+        content = []
+        for item in tool_results:
+            tuid, txt = item[0], item[1]
+            block = {"type": "tool_result", "tool_use_id": tuid, "content": txt}
+            if len(item) > 2 and item[2]:
+                block["is_error"] = True
+            content.append(block)
     elif text:
         content = text
     else:

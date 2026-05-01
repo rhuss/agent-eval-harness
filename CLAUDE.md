@@ -108,6 +108,16 @@ The `schema` descriptions are documentation for the LLM agents and judges. Scrip
 /eval-optimize --model opus            # Optimize: automated refinement loop
 ```
 
+## Tests
+
+```
+python3 -m pytest tests/ -v                # Unit tests only (e2e skipped by default)
+python3 -m pytest tests/e2e/ -v -s -m e2e  # E2E tests (requires ANTHROPIC_API_KEY, ~$0.50)
+python3 -m pytest tests/ -v -s -m ""       # Everything
+```
+
+E2E tests invoke real Claude API calls against a fake Jira skill fixture to verify the eval-analyze/eval-dataset pipeline. Use `-s` to see real-time progress from the runner.
+
 ## Key Design Decisions
 
 1. **Schema-driven** — dataset and output structures described in natural language in eval.yaml; agents and judges interpret them, scripts just move files
