@@ -106,6 +106,7 @@ class ExecutionConfig:
     arguments: str = ""
     timeout: Optional[int] = None
     max_budget_usd: Optional[float] = None
+    parallelism: Optional[int] = None
     env: dict = field(default_factory=dict)
 
 
@@ -256,6 +257,7 @@ class EvalConfig:
             arguments=exec_raw.get("arguments", ""),
             timeout=exec_raw.get("timeout"),
             max_budget_usd=exec_raw.get("max_budget_usd"),
+            parallelism=exec_raw.get("parallelism"),
             env=exec_raw.get("env") or {},
         )
 

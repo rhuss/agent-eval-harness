@@ -20,7 +20,9 @@ Usage:
 
 import argparse
 import json
+import shutil
 import sys
+import time
 from pathlib import Path
 
 from agent_eval.agent import RUNNERS
@@ -58,6 +60,8 @@ def main():
     parser.add_argument("--effort", default=None,
                         choices=["low", "medium", "high", "xhigh", "max"],
                         help="Claude Code reasoning effort (default: from eval.yaml runner.effort)")
+    parser.add_argument("--parallelism", type=int, default=None,
+                        help="Max parallel case executions (default: from eval.yaml or sequential)")
     args = parser.parse_args()
 
     from agent_eval.config import EvalConfig
@@ -104,7 +108,7 @@ def main():
     # the workspace CWD change — keeps plugin names stable.
     resolved_plugin_dirs = [str(Path(d).resolve()) for d in config.runner.plugin_dirs] if config.runner.plugin_dirs else []
 
-    runner = runner_cls(
+    runner_kwargs = dict(
         permissions=config.permissions,
         plugin_dirs=resolved_plugin_dirs,
         env_strip=config.runner.env_strip,
@@ -112,9 +116,9 @@ def main():
         subagent_model=subagent_model,
         mlflow_experiment=mlflow_experiment,
         mlflow_tracking_uri=config.mlflow.tracking_uri,
-        log_prefix="eval",
         effort=effort,
     )
+    runner = runner_cls(log_prefix="eval", **runner_kwargs)
 
     # Resolve timeout and budget: CLI override > config > defaults.
     # Use explicit None checks so that 0 is preserved (an operator who
@@ -136,10 +140,14 @@ def main():
 
     # ── Per-case execution ───────────────────────────────────────
     if config.execution.mode == "case":
-        _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
+        parallelism = (args.parallelism if args.parallelism is not None
+                       else config.execution.parallelism)
+        _execute_per_case(args, config, runner, runner_cls, runner_kwargs,
+                          output_dir, max_budget, timeout_s,
                           model, mlflow_experiment, system_prompt,
                           skill_args_template=skill_args,
-                          eval_params=eval_params)
+                          eval_params=eval_params,
+                          parallelism=parallelism)
         return
 
     # ── Batch execution (below) ──────────────────────────────────
@@ -232,16 +240,97 @@ def _build_eval_params(args, config, skill_args, max_budget, timeout_s, effort=N
     return params
 
 
-def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
-                      model, mlflow_experiment, system_prompt="",
-                      skill_args_template=None, eval_params=None):
-    """Execute the skill once per case with case-specific arguments.
+def _run_single_case(runner, skill_name, case_id, case_ws, output_dir,
+                     skill_args_template, model, mlflow_experiment,
+                     mlflow_tracking_uri, system_prompt, max_budget, timeout_s,
+                     total_cases, index):
+    """Execute and collect results for a single test case.
 
-    `skill_args_template` is the resolved invocation pattern (CLI override
-    falls back to config.execution.arguments) and must be the same value
-    captured in eval_params so the report does not advertise args that
-    weren't used.
+    Thread-safe: all I/O is to case-specific directories.
+    Returns (case_id, result_dict) or (case_id, None) if workspace missing.
     """
+    import yaml as _yaml
+
+    if not case_ws.exists():
+        print(f"  [{index}/{total_cases}] {case_id}: SKIP (workspace missing)",
+              file=sys.stderr)
+        return case_id, None
+
+    case_args = skill_args_template
+    input_path = case_ws / "input.yaml"
+    if input_path.exists() and case_args:
+        case_data = _yaml.safe_load(input_path.read_text()) or {}
+        if isinstance(case_data, dict):
+            case_args = _resolve_arguments(case_args, case_data)
+
+    if mlflow_experiment:
+        from agent_eval.mlflow.experiment import inject_tracing_env
+        inject_tracing_env(str(case_ws), project_root=Path.cwd(),
+                           tracking_uri=mlflow_tracking_uri,
+                           experiment_name=mlflow_experiment)
+
+    case_settings = case_ws / ".claude" / "settings.json"
+    settings_path = case_settings if case_settings.exists() else None
+
+    print(f"  [{index}/{total_cases}] {case_id}: /{skill_name} {case_args}",
+          file=sys.stderr)
+
+    result = runner.run_skill(
+        skill_name=skill_name,
+        args=case_args,
+        workspace=case_ws,
+        model=model,
+        settings_path=settings_path,
+        system_prompt=system_prompt,
+        max_budget_usd=max_budget,
+        timeout_s=timeout_s,
+    )
+
+    case_output = output_dir / "cases" / case_id
+    case_output.mkdir(parents=True, exist_ok=True)
+    if result.stdout:
+        (case_output / "stdout.log").write_text(result.stdout)
+    if result.stderr:
+        (case_output / "stderr.log").write_text(result.stderr)
+
+    if input_path.exists() and not input_path.is_symlink():
+        shutil.copy2(input_path, case_output / "input.yaml")
+
+    ws_subagents = case_ws / "subagents"
+    if ws_subagents.exists() and ws_subagents.is_dir():
+        out_subagents = case_output / "subagents"
+        out_subagents.mkdir(exist_ok=True)
+        for f in ws_subagents.iterdir():
+            if f.is_file() and not f.is_symlink() and f.suffix == ".jsonl":
+                shutil.copy2(f, out_subagents / f.name)
+
+    case_result = {
+        "exit_code": result.exit_code,
+        "duration_s": round(result.duration_s, 1),
+        "token_usage": result.token_usage,
+        "cost_usd": result.cost_usd,
+        "num_turns": result.num_turns,
+        "per_model_usage": result.per_model_usage,
+        "per_model_turns": result.per_model_turns,
+    }
+
+    with open(case_output / "run_result.json", "w") as f:
+        json.dump(case_result, f, indent=2)
+        f.write("\n")
+
+    status = "OK" if result.exit_code == 0 else f"FAIL (exit {result.exit_code})"
+    print(f"    → {case_id}: {status} | {result.duration_s:.0f}s | "
+          f"${result.cost_usd or 0:.2f}", file=sys.stderr)
+
+    return case_id, case_result
+
+
+def _execute_per_case(args, config, runner, runner_cls, runner_kwargs,
+                      output_dir, max_budget, timeout_s,
+                      model, mlflow_experiment, system_prompt="",
+                      skill_args_template=None, eval_params=None,
+                      parallelism=None):
+    """Execute the skill once per case with case-specific arguments."""
     import yaml as _yaml
 
     if skill_args_template is None:
@@ -256,104 +345,57 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
     with open(case_order_path) as f:
         case_order = _yaml.safe_load(f) or []
 
-    print(f"Executing: /{args.skill} (per-case, {len(case_order)} cases)",
+    effective_parallelism = min(parallelism, len(case_order)) if parallelism and parallelism > 1 else 1
+    parallel_label = f", parallelism={effective_parallelism}" if effective_parallelism > 1 else ""
+    print(f"Executing: /{args.skill} (per-case, {len(case_order)} cases{parallel_label})",
           file=sys.stderr)
     print(f"Agent: {runner.name} | Model: {model}", file=sys.stderr)
 
     case_results = {}
-    worst_exit = 0
+    wall_clock_start = time.monotonic()
 
-    for i, entry in enumerate(case_order, 1):
-        case_id = entry["case_id"] if isinstance(entry, dict) else entry
-        case_ws = workspace / "cases" / case_id
+    if effective_parallelism > 1:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        if not case_ws.exists():
-            print(f"  [{i}/{len(case_order)}] {case_id}: SKIP (workspace missing)",
-                  file=sys.stderr)
-            continue
+        futures = {}
+        with ThreadPoolExecutor(max_workers=effective_parallelism) as pool:
+            for i, entry in enumerate(case_order, 1):
+                case_id = entry["case_id"] if isinstance(entry, dict) else entry
+                case_ws = workspace / "cases" / case_id
+                case_runner = runner_cls(
+                    log_prefix=f"eval:{case_id}", **runner_kwargs)
+                fut = pool.submit(
+                    _run_single_case, case_runner, args.skill, case_id,
+                    case_ws, output_dir, skill_args_template, model,
+                    mlflow_experiment, config.mlflow.tracking_uri,
+                    system_prompt, max_budget, timeout_s,
+                    len(case_order), i)
+                futures[fut] = case_id
 
-        # Resolve per-case arguments from input.yaml
-        case_args = skill_args_template
-        input_path = case_ws / "input.yaml"
-        if input_path.exists() and case_args:
-            case_data = _yaml.safe_load(input_path.read_text()) or {}
-            if isinstance(case_data, dict):
-                case_args = _resolve_arguments(case_args, case_data)
+            for fut in as_completed(futures):
+                case_id, result = fut.result()
+                if result is not None:
+                    case_results[case_id] = result
+    else:
+        for i, entry in enumerate(case_order, 1):
+            case_id = entry["case_id"] if isinstance(entry, dict) else entry
+            case_ws = workspace / "cases" / case_id
+            case_id, result = _run_single_case(
+                runner, args.skill, case_id, case_ws, output_dir,
+                skill_args_template, model, mlflow_experiment,
+                config.mlflow.tracking_uri, system_prompt,
+                max_budget, timeout_s, len(case_order), i)
+            if result is not None:
+                case_results[case_id] = result
 
-        # Set MLflow environment per case workspace
-        if mlflow_experiment:
-            from agent_eval.mlflow.experiment import inject_tracing_env
-            inject_tracing_env(str(case_ws), project_root=Path.cwd(),
-                               tracking_uri=config.mlflow.tracking_uri,
-                               experiment_name=mlflow_experiment)
+    wall_clock_s = round(time.monotonic() - wall_clock_start, 1)
 
-        case_settings = case_ws / ".claude" / "settings.json"
-        settings_path = case_settings if case_settings.exists() else None
-
-        print(f"  [{i}/{len(case_order)}] {case_id}: /{args.skill} {case_args}",
-              file=sys.stderr)
-
-        result = runner.run_skill(
-            skill_name=args.skill,
-            args=case_args,
-            workspace=case_ws,
-            model=model,
-            settings_path=settings_path,
-            system_prompt=system_prompt,
-            max_budget_usd=max_budget,
-            timeout_s=timeout_s,
-        )
-
-        # Save per-case outputs
-        case_output = output_dir / "cases" / case_id
-        case_output.mkdir(parents=True, exist_ok=True)
-        if result.stdout:
-            (case_output / "stdout.log").write_text(result.stdout)
-        if result.stderr:
-            (case_output / "stderr.log").write_text(result.stderr)
-
-        # Copy input.yaml for MLflow artifact logging.
-        if input_path.exists() and not input_path.is_symlink():
-            import shutil
-            shutil.copy2(input_path, case_output / "input.yaml")
-
-        # Copy subagent transcripts
-        ws_subagents = case_ws / "subagents"
-        if ws_subagents.exists() and ws_subagents.is_dir():
-            import shutil
-            out_subagents = case_output / "subagents"
-            out_subagents.mkdir(exist_ok=True)
-            for f in ws_subagents.iterdir():
-                if f.is_file() and not f.is_symlink() and f.suffix == ".jsonl":
-                    shutil.copy2(f, out_subagents / f.name)
-
-        case_results[case_id] = {
-            "exit_code": result.exit_code,
-            "duration_s": round(result.duration_s, 1),
-            "token_usage": result.token_usage,
-            "cost_usd": result.cost_usd,
-            "num_turns": result.num_turns,
-            "per_model_usage": result.per_model_usage,
-            "per_model_turns": result.per_model_turns,
-        }
-
-        # Write per-case run_result.json so score.py can read
-        # execution metadata per case (not just aggregate)
-        with open(case_output / "run_result.json", "w") as f:
-            json.dump(case_results[case_id], f, indent=2)
-            f.write("\n")
-        worst_exit = max(worst_exit, result.exit_code)
-
-        status = "OK" if result.exit_code == 0 else f"FAIL (exit {result.exit_code})"
-        print(f"    → {status} | {result.duration_s:.0f}s | "
-              f"${result.cost_usd or 0:.2f}", file=sys.stderr)
-
-    # Write aggregated run_result.json
+    # Aggregate metrics across cases
     total_duration = sum(r["duration_s"] for r in case_results.values())
     total_cost = sum(r.get("cost_usd") or 0 for r in case_results.values())
     total_turns = sum(r.get("num_turns") or 0 for r in case_results.values())
+    worst_exit = max((r["exit_code"] for r in case_results.values()), default=0)
 
-    # Aggregate token_usage across cases
     agg_tokens = {}
     for r in case_results.values():
         tu = r.get("token_usage") or {}
@@ -361,7 +403,6 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
             if isinstance(v, (int, float)):
                 agg_tokens[k] = agg_tokens.get(k, 0) + v
 
-    # Aggregate per_model_usage across cases
     agg_per_model = {}
     for r in case_results.values():
         pmu = r.get("per_model_usage") or {}
@@ -372,7 +413,6 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
                 if isinstance(v, (int, float)):
                     agg_per_model[m][k] = agg_per_model[m].get(k, 0) + v
 
-    # Aggregate per_model_turns across cases
     agg_per_model_turns = {}
     for r in case_results.values():
         pmt = r.get("per_model_turns") or {}
@@ -383,6 +423,7 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
     run_meta = {
         "exit_code": worst_exit,
         "duration_s": round(total_duration, 1),
+        "wall_clock_s": wall_clock_s,
         "cost_usd": round(total_cost, 2),
         "token_usage": agg_tokens or None,
         "num_turns": total_turns or None,
@@ -401,7 +442,7 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
         f.write("\n")
 
     print(f"EXIT: {worst_exit}")
-    print(f"DURATION: {total_duration:.0f}s total")
+    print(f"DURATION: {wall_clock_s:.0f}s wall-clock, {total_duration:.0f}s total")
     print(f"COST: ${total_cost:.2f} total")
     print(f"CASES: {len(case_results)} "
           f"({sum(1 for r in case_results.values() if r['exit_code'] == 0)} OK, "
@@ -412,7 +453,6 @@ def _execute_per_case(args, config, runner, output_dir, max_budget, timeout_s,
 
 def _copy_input_files_batch(workspace, output_dir):
     """Copy batch.yaml and case_order.yaml to output dir for MLflow artifact logging."""
-    import shutil
     for name in ("batch.yaml", "case_order.yaml"):
         src = workspace / name
         if src.exists() and not src.is_symlink():
@@ -430,7 +470,6 @@ def _save_result(result, args, output_dir, runner, model, eval_params=None):
     # Only copy regular .jsonl files — reject symlinks (CWE-59).
     ws_subagents = Path(args.workspace) / "subagents"
     if ws_subagents.exists() and ws_subagents.is_dir():
-        import shutil
         out_subagents = output_dir / "subagents"
         out_subagents.mkdir(exist_ok=True)
         for f in ws_subagents.iterdir():

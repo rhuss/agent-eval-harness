@@ -76,10 +76,11 @@ Each case gets ALL files from the dataset case directory (not just input.yaml), 
 - Hooks: per-case hooks with SubagentStop for transcript capture
 
 **Case mode execution**:
-- execute.py loops through `case_order.yaml`, invoking the skill once per case
+- execute.py iterates `case_order.yaml`, invoking the skill once per case
+- When `execution.parallelism` > 1 (or `--parallelism` CLI), cases run concurrently via thread pool; each case gets a per-case log prefix (e.g., `eval:case-003`)
 - Each case gets its own stdout.log, stderr.log, and subagent transcripts
 - Results are saved to `$AGENT_EVAL_RUNS_DIR/{id}/cases/{case_id}/stdout.log`
-- run_result.json includes `execution_mode: "case"` and `per_case` breakdown
+- run_result.json includes `execution_mode: "case"`, `per_case` breakdown, `duration_s` (sum of per-case durations), and `wall_clock_s` (actual elapsed time)
 
 ## 3. Execution → Collection
 
