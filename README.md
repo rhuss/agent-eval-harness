@@ -105,6 +105,7 @@ execution:
   arguments: "{prompt}"   # resolved per case from input.yaml fields
   # timeout: 3600            # Wall-clock timeout in seconds per invocation
   # max_budget_usd: 5.0      # Cost cap in USD per invocation
+  # parallelism: 3            # Run up to N cases concurrently (case mode only)
   # env:                     # Inject env vars into workspace settings
   #   JIRA_SERVER: http://localhost:8080   # Literal value
   #   JIRA_TOKEN: $JIRA_TOKEN              # $VAR resolved from caller's env
@@ -253,7 +254,7 @@ thresholds:
 
 ### Key concepts
 
-- **`execution`** — `mode` (`case` or `batch`), `arguments` template, optional `timeout` (wall-clock seconds per invocation), `max_budget_usd` (cost cap per invocation), and `env` for injecting environment variables into workspaces (`$VAR` syntax resolves from caller's environment). In `case` mode (default), the skill is invoked once per test case with `{field}` placeholders resolved from each case's input.yaml. In `batch` mode, all cases are bundled into batch.yaml for a single invocation.
+- **`execution`** — `mode` (`case` or `batch`), `arguments` template, optional `timeout` (wall-clock seconds per invocation), `max_budget_usd` (cost cap per invocation), `parallelism` (run up to N cases concurrently in case mode), and `env` for injecting environment variables into workspaces (`$VAR` syntax resolves from caller's environment). In `case` mode (default), the skill is invoked once per test case with `{field}` placeholders resolved from each case's input.yaml. In `batch` mode, all cases are bundled into batch.yaml for a single invocation.
 - **`schema`** — natural language description of structure. Used on `dataset` and each `outputs` entry. Agents and judges read these to understand the data.
 - **`inputs.tools`** — tool interception for headless and interactive execution. Each entry has a `match` (what to intercept) and a `prompt` (how to handle it). AskUserQuestion uses 3-tier answering: exact `case_overrides` → LLM call (`models.hook`) with case context (`input.yaml` + `answers.yaml`) → fallback to first option.
 - **`outputs`** — two types: `path` for file artifacts on disk, `tool` for tool call side effects (Jira, APIs). Both have `schema` descriptions. Optional `batch_pattern` maps output files to cases in batch mode using `{n}` as a 1-based index (e.g. `"RFE-{n:03d}"` → `RFE-001`, `RFE-002`).
@@ -461,6 +462,7 @@ Execute the evaluation suite: prepare workspace, run the skill headlessly, colle
 
 ```
 /eval-run --model opus                          # Run all cases
+/eval-run --model opus --parallelism 3          # Run 3 cases concurrently
 /eval-run --model opus --case case-001          # Run specific case
 /eval-run --model opus --baseline prev-run-id   # Compare against baseline
 /eval-run --model opus --no-judge               # Skip LLM judges
