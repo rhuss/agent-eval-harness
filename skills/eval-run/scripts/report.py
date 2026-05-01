@@ -538,6 +538,8 @@ a:hover { text-decoration: underline; }
 /* Onion */
 .img-compare-onion-wrap { display: grid; border: 1px solid var(--border); border-radius: 4px; background: #fff; overflow: hidden; }
 .img-compare-onion-wrap > img { grid-area: 1/1; display: block; width: 100%; height: auto; }
+.img-compare-onion-wrap .onion-top { grid-area: 1/1; background: #fff; }
+.img-compare-onion-wrap .onion-top img { display: block; width: 100%; height: auto; }
 .img-compare-onion input[type="range"] { display: block; width: 100%; margin: 8px 0 0; accent-color: var(--accent); }
 .img-compare-onion .onion-label { text-align: center; font-size: 0.82em; color: var(--text-muted); margin-top: 2px; }
 
@@ -1569,7 +1571,7 @@ def _render_image_compare(gen_uri, ref_uri, gen_label="Generated",
         f'    <div class="img-compare-onion">\n'
         f'      <div class="img-compare-onion-wrap">\n'
         f'        <img src="{ref_uri}" alt="{_esc(ref_label)}">\n'
-        f'        <img class="onion-top" src="{gen_uri}" alt="{_esc(gen_label)}" style="opacity:0.5">\n'
+        f'        <div class="onion-top" style="opacity:0.5"><img src="{gen_uri}" alt="{_esc(gen_label)}"></div>\n'
         f'      </div>\n'
         f'      <input type="range" min="0" max="100" value="50">\n'
         f'      <div class="img-compare-swipe-labels">'
