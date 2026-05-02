@@ -130,6 +130,7 @@ class ClaudeCodeRunner(EvalRunner):
         start = time.monotonic()
         stdout_lines = []
         deadline = start + timeout_s
+        timed_out = False
 
         try:
             proc = subprocess.Popen(
@@ -144,6 +145,22 @@ class ClaudeCodeRunner(EvalRunner):
 
             proc.stdin.write(prompt)
             proc.stdin.close()
+
+            # Watchdog thread: kill the process when the deadline passes.
+            # The stdout readline loop blocks during extended thinking, so
+            # an in-loop check never fires.  Killing the process closes
+            # stdout, which unblocks the for-loop.
+            def _watchdog():
+                nonlocal timed_out
+                remaining = max(0, deadline - time.monotonic())
+                try:
+                    proc.wait(timeout=remaining if remaining > 0 else 0.1)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    proc.kill()
+
+            watchdog = threading.Thread(target=_watchdog, daemon=True)
+            watchdog.start()
 
             # Inject synthetic user event for the prompt
             if self._log_prefix:
@@ -180,9 +197,10 @@ class ClaudeCodeRunner(EvalRunner):
                         pass
                 stdout_lines.append(line)
 
-            remaining = max(0, deadline - time.monotonic())
             stderr = proc.stderr.read()
-            proc.wait(timeout=max(remaining, 5))
+            proc.wait(timeout=5)
+            if timed_out:
+                raise subprocess.TimeoutExpired(cmd, timeout_s)
 
         except subprocess.TimeoutExpired:
             proc.kill()
