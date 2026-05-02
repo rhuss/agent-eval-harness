@@ -1784,7 +1784,7 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
         # Execution logs at the case root — not skill output, exclude from
         # the report.  Only exclude root-level files, not nested ones with the
         # same name (a skill could legitimately produce artifacts/stdout.log).
-        _EXEC_LOG_PATHS = {"stdout.log", "stderr.log", "run_result.json"}
+        _EXEC_LOG_PATHS = {"stdout.log", "stderr.log", "run_result.json", "input.yaml"}
         if case_dir.exists():
             def _file_sort_key(f):
                 """Sort visual artifacts first: images, then diagrams, then the rest."""
