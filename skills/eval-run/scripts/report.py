@@ -530,7 +530,8 @@ a:hover { text-decoration: underline; }
 /* Swipe */
 .img-compare-swipe-imgs { display: grid; border: 1px solid var(--border); border-radius: 4px; background: #fff; overflow: hidden; }
 .img-compare-swipe-imgs > img { grid-area: 1/1; display: block; width: 100%; height: auto; }
-.img-compare-swipe-imgs .swipe-ref { z-index: 1; clip-path: inset(0 50% 0 0); }
+.img-compare-swipe-imgs .swipe-ref { grid-area: 1/1; z-index: 1; background: #fff; clip-path: inset(0 50% 0 0); }
+.img-compare-swipe-imgs .swipe-ref img { display: block; width: 100%; height: auto; }
 .img-compare-swipe-imgs .swipe-line { grid-area: 1/1; z-index: 2; justify-self: start; width: 3px; background: var(--accent); pointer-events: none; margin-left: 50%; }
 .img-compare-swipe input[type="range"] { display: block; width: 100%; margin: 8px 0 0; accent-color: var(--accent); }
 .img-compare-swipe-labels { display: flex; justify-content: space-between; padding: 4px 1em; font-size: 0.82em; color: var(--text-muted); }
@@ -1512,20 +1513,23 @@ def _md_table_to_html(table_lines):
         cells = _parse_row(row_line)
         html += "<tr>"
         for c in cells:
-            # Color-code PASS/FAIL cells: wrap content in a badge span so the
-            # `display: inline-block` badge style does not break <td> layout.
+            # Color-code PASS/FAIL keywords as pills, leaving the rest
+            # of the cell as plain text.
+            import re as _re
             stripped = c.strip()
-            # Strip bold/italic markdown for keyword matching
             bare = stripped.strip("*_")
-            inner = _md_inline(c)
-            if bare in ("PASS", "FIXED"):
-                html += f'<td><span class="pass">{inner}</span></td>'
-            elif bare in ("FAIL", "REGRESSION"):
-                html += f'<td><span class="fail">{inner}</span></td>'
-            elif bare in ("SKIP", "SKIPPED"):
-                html += f'<td><span class="skip">{inner}</span></td>'
+            _STATUS_KW = {"PASS", "FIXED", "FAIL", "REGRESSION", "SKIP", "SKIPPED"}
+            _STATUS_CLS = {"PASS": "pass", "FIXED": "pass", "FAIL": "fail",
+                           "REGRESSION": "fail", "SKIP": "skip", "SKIPPED": "skip"}
+            match = _re.match(r'^(\*{0,2}_?)(PASS|FIXED|FAIL|REGRESSION|SKIP|SKIPPED)(_?\*{0,2})(.*)', bare)
+            if match:
+                kw = match.group(2)
+                rest = match.group(4).strip()
+                pill = f'<span class="{_STATUS_CLS[kw]}">{kw}</span>'
+                rest_html = f" {_md_inline(rest)}" if rest else ""
+                html += f"<td>{pill}{rest_html}</td>"
             else:
-                html += f"<td>{inner}</td>"
+                html += f"<td>{_md_inline(c)}</td>"
         html += "</tr>\n"
 
     html += "</table>"
@@ -1559,7 +1563,7 @@ def _render_image_compare(gen_uri, ref_uri, gen_label="Generated",
         f'    <div class="img-compare-swipe">\n'
         f'      <div class="img-compare-swipe-imgs">\n'
         f'        <img src="{gen_uri}" alt="{_esc(gen_label)}">\n'
-        f'        <img class="swipe-ref" src="{ref_uri}" alt="{_esc(ref_label)}">\n'
+        f'        <div class="swipe-ref"><img src="{ref_uri}" alt="{_esc(ref_label)}"></div>\n'
         f'        <div class="swipe-line"></div>\n'
         f'      </div>\n'
         f'      <input type="range" min="0" max="100" value="50">\n'
