@@ -194,12 +194,12 @@ def _create_per_case_workspace(workspace, case_dirs, config, args):
         case_ws.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "init", "-q", str(case_ws)], check=True)
 
-        # Copy ALL files from the dataset case directory (H-2)
-        for f in case_dir.iterdir():
-            if f.is_file():
-                shutil.copy2(f, case_ws / f.name)
-            elif f.is_dir():
-                shutil.copytree(f, case_ws / f.name, dirs_exist_ok=True)
+        # Copy only the input file from the dataset case directory.
+        # Everything else (gold standards, reference docs, annotations)
+        # is evaluation material that the skill must not see.
+        input_src = _find_input_file(case_dir)
+        if input_src:
+            shutil.copy2(input_src, case_ws / input_src.name)
 
         # Create output directories
         for output in config.outputs:
@@ -249,6 +249,15 @@ def _create_per_case_workspace(workspace, case_dirs, config, args):
     print(f"CASES: {len(case_dirs)}")
     for entry in case_order:
         print(f"  {entry['case_id']}: {workspace / 'cases' / entry['case_id']}")
+
+
+def _find_input_file(case_dir):
+    """Find the input file in a case directory. Returns Path or None."""
+    for suffix in (".yaml", ".yml", ".json"):
+        candidate = case_dir / f"input{suffix}"
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _read_input(case_dir):
