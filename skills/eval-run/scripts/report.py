@@ -1512,20 +1512,22 @@ def _md_table_to_html(table_lines):
         cells = _parse_row(row_line)
         html += "<tr>"
         for c in cells:
-            # Color-code PASS/FAIL cells: wrap content in a badge span so the
-            # `display: inline-block` badge style does not break <td> layout.
+            # Color-code PASS/FAIL keywords as pills, leaving the rest
+            # of the cell as plain text.
+            import re as _re
             stripped = c.strip()
-            # Strip bold/italic markdown for keyword matching
             bare = stripped.strip("*_")
-            inner = _md_inline(c)
-            if bare in ("PASS", "FIXED"):
-                html += f'<td><span class="pass">{inner}</span></td>'
-            elif bare in ("FAIL", "REGRESSION"):
-                html += f'<td><span class="fail">{inner}</span></td>'
-            elif bare in ("SKIP", "SKIPPED"):
-                html += f'<td><span class="skip">{inner}</span></td>'
+            _STATUS_CLS = {"PASS": "pass", "FIXED": "pass", "FAIL": "fail",
+                           "REGRESSION": "fail", "SKIP": "skip", "SKIPPED": "skip"}
+            match = _re.match(r'^(\*{0,2}_?)(PASS|FIXED|FAIL|REGRESSION|SKIP|SKIPPED)(_?\*{0,2})(.*)', bare)
+            if match:
+                kw = match.group(2)
+                rest = match.group(4).strip()
+                pill = f'<span class="{_STATUS_CLS[kw]}">{kw}</span>'
+                rest_html = f" {_md_inline(rest)}" if rest else ""
+                html += f"<td>{pill}{rest_html}</td>"
             else:
-                html += f"<td>{inner}</td>"
+                html += f"<td>{_md_inline(c)}</td>"
         html += "</tr>\n"
 
     html += "</table>"
