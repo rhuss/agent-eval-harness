@@ -1786,11 +1786,20 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
         # same name (a skill could legitimately produce artifacts/stdout.log).
         _EXEC_LOG_PATHS = {"stdout.log", "stderr.log", "run_result.json"}
         if case_dir.exists():
-            files = sorted(f for f in case_dir.rglob("*") if f.is_file()
+            def _file_sort_key(f):
+                """Sort visual artifacts first: images, then diagrams, then the rest."""
+                if _is_image_file(f):
+                    return (0, f.name)
+                if f.suffix in _DIAGRAM_SUFFIXES:
+                    return (1, f.name)
+                return (2, f.name)
+
+            files = sorted((f for f in case_dir.rglob("*") if f.is_file()
                            and str(f.relative_to(case_dir)) not in _EXEC_LOG_PATHS
                            and not str(f.relative_to(case_dir)).startswith("subagents/")
                            and not any(str(f.relative_to(case_dir)).startswith(sp)
-                                       for sp in shared_paths))
+                                       for sp in shared_paths)),
+                           key=_file_sort_key)
             if has_baseline:
                 # Exclude files under output_paths — they'll be in the diff
                 files = [f for f in files
@@ -1881,7 +1890,15 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                     continue
                 curr_files = {f.name: f for f in curr_dir.iterdir() if f.is_file()} if curr_dir.exists() else {}
                 base_files = {f.name: f for f in base_dir.iterdir() if f.is_file()} if base_dir.exists() else {}
-                for name in sorted(set(curr_files) | set(base_files)):
+                def _diff_sort_key(name):
+                    p = Path(name)
+                    if p.suffix.lower() in _IMAGE_SUFFIXES:
+                        return (0, name)
+                    if p.suffix.lower() in _DIAGRAM_SUFFIXES:
+                        return (1, name)
+                    return (2, name)
+
+                for name in sorted(set(curr_files) | set(base_files), key=_diff_sort_key):
                     curr_f = curr_files.get(name)
                     base_f = base_files.get(name)
                     # Image comparison
