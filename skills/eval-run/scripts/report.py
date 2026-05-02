@@ -1834,6 +1834,11 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                                      f'<span class="skip">({size} bytes, unreadable)</span></div>\n')
                     elif f.suffix in _DIAGRAM_SUFFIXES:
                         sibling_names = {s.name for s in f.parent.iterdir()}
+                        # Skip if a rendered sibling (e.g. .drawio.png) is already displayed
+                        has_rendered_sibling = (
+                            f"{f.name}.png" in sibling_names
+                            or f"{f.name}.svg" in sibling_names
+                        )
                         svg_uri = _try_render_diagram(f, sibling_names)
                         if svg_uri:
                             html += f'<div class="file-badge">{_esc(str(rel))}</div>\n'
@@ -1849,7 +1854,7 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                             if source:
                                 html += (f'<details class="diagram-source"><summary>Source</summary>\n'
                                          f'<pre class="output">{_esc(source)}</pre></details>\n')
-                        else:
+                        elif not has_rendered_sibling:
                             content = _read_text(f, max_lines=200)
                             if content:
                                 html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
@@ -1902,6 +1907,11 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                     if name.endswith(tuple(_DIAGRAM_SUFFIXES)):
                         sib_c = {s.name for s in curr_dir.iterdir()} if curr_dir.exists() else set()
                         sib_b = {s.name for s in base_dir.iterdir()} if base_dir.exists() else set()
+                        # Skip if a rendered sibling (PNG) is already shown
+                        has_rendered = (f"{name}.png" in sib_c or f"{name}.svg" in sib_c
+                                        or f"{name}.png" in sib_b or f"{name}.svg" in sib_b)
+                        if has_rendered:
+                            continue
                         curr_uri = _try_render_diagram(curr_f, sib_c) if curr_f else ""
                         base_uri = _try_render_diagram(base_f, sib_b) if base_f else ""
                         if curr_uri and base_uri:
