@@ -530,7 +530,8 @@ a:hover { text-decoration: underline; }
 /* Swipe */
 .img-compare-swipe-imgs { display: grid; border: 1px solid var(--border); border-radius: 4px; background: #fff; overflow: hidden; }
 .img-compare-swipe-imgs > img { grid-area: 1/1; display: block; width: 100%; height: auto; }
-.img-compare-swipe-imgs .swipe-ref { z-index: 1; clip-path: inset(0 50% 0 0); }
+.img-compare-swipe-imgs .swipe-ref { grid-area: 1/1; z-index: 1; background: #fff; clip-path: inset(0 50% 0 0); }
+.img-compare-swipe-imgs .swipe-ref img { display: block; width: 100%; height: auto; }
 .img-compare-swipe-imgs .swipe-line { grid-area: 1/1; z-index: 2; justify-self: start; width: 3px; background: var(--accent); pointer-events: none; margin-left: 50%; }
 .img-compare-swipe input[type="range"] { display: block; width: 100%; margin: 8px 0 0; accent-color: var(--accent); }
 .img-compare-swipe-labels { display: flex; justify-content: space-between; padding: 4px 1em; font-size: 0.82em; color: var(--text-muted); }
@@ -1561,7 +1562,7 @@ def _render_image_compare(gen_uri, ref_uri, gen_label="Generated",
         f'    <div class="img-compare-swipe">\n'
         f'      <div class="img-compare-swipe-imgs">\n'
         f'        <img src="{gen_uri}" alt="{_esc(gen_label)}">\n'
-        f'        <img class="swipe-ref" src="{ref_uri}" alt="{_esc(ref_label)}">\n'
+        f'        <div class="swipe-ref"><img src="{ref_uri}" alt="{_esc(ref_label)}"></div>\n'
         f'        <div class="swipe-line"></div>\n'
         f'      </div>\n'
         f'      <input type="range" min="0" max="100" value="50">\n'
