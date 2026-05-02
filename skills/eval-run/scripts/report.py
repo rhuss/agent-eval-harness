@@ -218,7 +218,7 @@ def _render_d2_to_svg(d2_path: Path) -> str:
         with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
             tmp_path = tmp.name
         subprocess.run(
-            ["d2", "--bundle", "--salt", salt, str(d2_path), tmp_path],
+            ["d2", "--bundle", "--layout", "elk", "--salt", salt, str(d2_path), tmp_path],
             check=True, capture_output=True, text=True, timeout=30,
         )
         return Path(tmp_path).read_text()
