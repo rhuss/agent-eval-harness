@@ -277,6 +277,107 @@ def _render_drawio_to_svg(drawio_path: Path) -> str:
             pass
 
 
+def _render_graph_spec_to_svg(json_path: Path) -> str:
+    """Render a graph JSON to SVG via D2. Supports both graph-spec format
+    (nodes/edges arrays) and layout-plan format (elements array with types)."""
+    try:
+        spec = json.loads(json_path.read_text())
+        if not isinstance(spec, dict):
+            return ""
+
+        nodes = []
+        edges = []
+
+        if "nodes" in spec:
+            # graph-spec format
+            nodes = spec["nodes"]
+            edges = spec.get("edges", [])
+        elif "elements" in spec:
+            # layout-plan format
+            for elem in spec["elements"]:
+                etype = elem.get("type", "")
+                if etype in ("node", "container"):
+                    label = elem.get("label_html", elem.get("id", ""))
+                    label = label.split("<b>")[-1].split("</b>")[0] if "<b>" in label else label
+                    label = label.split("<br>")[0].strip()
+                    nodes.append({"id": elem["id"], "label": label,
+                                  "role": "external" if "dashed" in elem.get("style", "") else "processing"})
+                elif etype == "edge":
+                    edges.append({"from": elem["from"], "to": elem["to"],
+                                  "label": elem.get("label", ""),
+                                  "style": "dashed" if "dashed=1" in elem.get("style", "") else "solid"})
+        else:
+            return ""
+
+        if not nodes:
+            return ""
+
+        # Convert to D2
+        def _d2_esc(s):
+            return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+        lines = ["direction: right", ""]
+        for n in nodes:
+            label = _d2_esc(n.get("label", n["id"]))
+            style = ""
+            if n.get("role") == "external":
+                style = " { style.stroke-dash: 3 }"
+            lines.append(f'{n["id"]}: "{label}"{style}')
+        lines.append("")
+        for e in edges:
+            label = _d2_esc(e.get("label", ""))
+            label_part = f': "{label}"' if label else ""
+            style = " { style.stroke-dash: 3 }" if e.get("is_back_edge") or e.get("style") == "dashed" else ""
+            lines.append(f'{e["from"]} -> {e["to"]}{label_part}{style}')
+        d2_text = "\n".join(lines)
+
+        salt = hashlib.md5(str(json_path).encode()).hexdigest()[:8]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".d2", delete=False) as d2_tmp:
+            d2_tmp.write(d2_text)
+            d2_path = d2_tmp.name
+        with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as svg_tmp:
+            svg_path = svg_tmp.name
+        subprocess.run(
+            ["d2", "--bundle", "--layout", "elk", "--salt", salt, d2_path, svg_path],
+            check=True, capture_output=True, text=True, timeout=30,
+        )
+        svg_text = Path(svg_path).read_text()
+        return svg_text
+    except (FileNotFoundError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired, OSError, json.JSONDecodeError):
+        return ""
+    finally:
+        for p in ("d2_path", "svg_path"):
+            try:
+                Path(locals().get(p, "")).unlink(missing_ok=True)
+            except (OSError, TypeError):
+                pass
+
+
+def _resolve_artifact_type(filename: str, config: dict) -> str:
+    """Resolve the semantic type of an artifact from eval.yaml outputs.types.
+
+    Checks explicit filenames first, then glob patterns.
+    Returns the type string (e.g. 'graph') or empty string.
+    """
+    import fnmatch
+    for output in config.get("outputs", []):
+        if isinstance(output, dict):
+            types = output.get("types") or {}
+        else:
+            types = getattr(output, "types", None) or {}
+        if not types:
+            continue
+        # Exact match first
+        if filename in types:
+            return types[filename]
+        # Glob patterns
+        for pattern, typ in types.items():
+            if fnmatch.fnmatch(filename, pattern):
+                return typ
+    return ""
+
+
 def _svg_to_data_uri(svg_text: str) -> str:
     data = base64.b64encode(svg_text.encode("utf-8")).decode("ascii")
     return f"data:image/svg+xml;base64,{data}"
@@ -1887,6 +1988,21 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                                 html += (f'<details class="diagram-source"><summary>Source</summary>\n'
                                          f'<pre class="output">{_esc(source)}</pre></details>\n')
                         elif not has_rendered_sibling:
+                            content = _read_text(f, max_lines=200)
+                            if content:
+                                html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                         f'<pre class="output">{_esc(content)}</pre>\n')
+                    elif _resolve_artifact_type(f.name, config) == "graph":
+                        svg = _render_graph_spec_to_svg(f)
+                        if svg:
+                            svg_uri = _svg_to_data_uri(svg)
+                            html += f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                            html += _render_standalone_image(svg_uri, str(rel))
+                            content = _read_text(f, max_lines=200)
+                            if content:
+                                html += (f'<details class="diagram-source"><summary>Source</summary>\n'
+                                         f'<pre class="output">{_esc(content)}</pre></details>\n')
+                        else:
                             content = _read_text(f, max_lines=200)
                             if content:
                                 html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'

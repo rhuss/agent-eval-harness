@@ -48,6 +48,7 @@ class OutputConfig:
     tool: str = ""       # Tool call name/pattern to capture
     schema: str = ""
     batch_pattern: str = ""  # Batch collection pattern (empty = auto-detect)
+    types: dict = None   # Semantic types for artifacts (filename or glob → type)
 
 
 @dataclass
@@ -320,6 +321,7 @@ class EvalConfig:
                 tool=o.get("tool", ""),
                 schema=o.get("schema", ""),
                 batch_pattern=o.get("batch_pattern", ""),
+                types=o.get("types") or None,
             ))
 
         # Inputs (tool interception)
