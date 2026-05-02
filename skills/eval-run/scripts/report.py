@@ -181,31 +181,53 @@ def _image_to_data_uri(path: Path) -> str:
         return ""
 
 
-def _find_gold_standard_image(case_id: str, dataset_path: str):
-    """Find a gold standard image for a case from the dataset annotations."""
+def _find_gold_standard_images(case_id: str, dataset_path: str):
+    """Find gold standard images for a case from the dataset annotations.
+
+    Returns a dict with keys 'image' (PNG/SVG from file) and 'diagram'
+    (SVG rendered from the gold standard source file, e.g. D2 or drawio).
+    Either or both may be None.
+    """
+    result = {"image": None, "diagram_uri": None}
     if not dataset_path:
-        return None
+        return result
     dataset_root = Path(dataset_path).resolve()
     case_ds = (dataset_root / case_id).resolve()
     if not case_ds.is_relative_to(dataset_root):
-        return None
+        return result
     ann_path = case_ds / "annotations.yaml"
     if not ann_path.is_file() or ann_path.is_symlink():
-        return None
+        return result
     ann = _load_yaml(ann_path)
     gold_name = ann.get("gold_diagram")
     if not gold_name:
-        return None
+        return result
     stem = Path(gold_name).stem
-    full_stem = gold_name  # e.g. "gold-standard.drawio"
+    full_stem = gold_name  # e.g. "gold-standard.drawio" or "gold-standard.d2"
+
+    # Find a pre-rendered image (PNG, SVG file)
     for suffix in _IMAGE_SUFFIXES:
         for candidate_name in [f"{full_stem}{suffix}", f"{stem}{suffix}"]:
             candidate = (case_ds / candidate_name).resolve()
             if (candidate.is_relative_to(dataset_root)
                     and candidate.is_file()
                     and not candidate.is_symlink()):
-                return candidate
-    return None
+                result["image"] = candidate
+                break
+        if result["image"]:
+            break
+
+    # Render the gold standard source file to SVG for diagram comparison
+    gold_source = (case_ds / gold_name).resolve()
+    if (gold_source.is_file() and not gold_source.is_symlink()
+            and gold_source.is_relative_to(dataset_root)
+            and gold_source.suffix in _DIAGRAM_SUFFIXES):
+        sibs = {s.name for s in case_ds.iterdir()}
+        svg_uri = _try_render_diagram(gold_source, sibs)
+        if svg_uri:
+            result["diagram_uri"] = svg_uri
+
+    return result
 
 
 _DIAGRAM_SUFFIXES = {".d2", ".drawio"}
@@ -1778,8 +1800,9 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
         has_baseline = bl_cases_dir and (bl_cases_dir / case_id).exists()
 
         # Resolve gold standard image for comparison
-        gold_img_path = _find_gold_standard_image(case_id, dataset_path)
-        gold_data_uri = _image_to_data_uri(gold_img_path) if gold_img_path else ""
+        gold = _find_gold_standard_images(case_id, dataset_path)
+        gold_image_uri = _image_to_data_uri(gold["image"]) if gold["image"] else ""
+        gold_diagram_uri = gold.get("diagram_uri") or ""
 
         # Execution logs at the case root — not skill output, exclude from
         # the report.  Only exclude root-level files, not nested ones with the
@@ -1829,9 +1852,9 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                         data_uri = _image_to_data_uri(f)
                         if data_uri:
                             html += f'<div class="file-badge">{_esc(str(rel))}</div>\n'
-                            if gold_data_uri:
+                            if gold_image_uri:
                                 html += _render_image_compare(
-                                    data_uri, gold_data_uri,
+                                    data_uri, gold_image_uri,
                                     gen_label="Generated",
                                     ref_label="Gold Standard",
                                     ref_class="img-label-ref")
@@ -1851,9 +1874,9 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                         svg_uri = _try_render_diagram(f, sibling_names)
                         if svg_uri:
                             html += f'<div class="file-badge">{_esc(str(rel))}</div>\n'
-                            if gold_data_uri:
+                            if gold_diagram_uri:
                                 html += _render_image_compare(
-                                    svg_uri, gold_data_uri,
+                                    svg_uri, gold_diagram_uri,
                                     gen_label="Generated",
                                     ref_label="Gold Standard",
                                     ref_class="img-label-ref")
