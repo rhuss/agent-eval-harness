@@ -668,6 +668,12 @@ a:hover { text-decoration: underline; }
 .img-compare-onion .onion-label { text-align: center; font-size: 0.82em; color: var(--text-muted); margin-top: 2px; }
 
 /* Diagram source collapsible */
+/* Metrics table */
+.metrics-table { font-size: 0.88em; margin: 0.5em 0; border-collapse: collapse; }
+.metrics-table th { text-align: left; padding: 4px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text-soft); }
+.metrics-table td { padding: 4px 12px; border-bottom: 1px solid var(--border); }
+.metrics-table td:last-child { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 600; }
+
 .diagram-source { margin-top: 0.4em; }
 .diagram-source summary { font-size: 0.85em; color: var(--text-muted); cursor: pointer; padding: 4px 0; }
 .diagram-source summary:hover { color: var(--text); }
@@ -2007,6 +2013,23 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                             if content:
                                 html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
                                          f'<pre class="output">{_esc(content)}</pre>\n')
+                    elif _resolve_artifact_type(f.name, config) == "metrics":
+                        try:
+                            metrics = json.loads(f.read_text())
+                            if isinstance(metrics, dict) and metrics:
+                                html += f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                html += '<table class="metrics-table"><tr><th>Metric</th><th>Value</th></tr>\n'
+                                for k, v in metrics.items():
+                                    html += f'<tr><td>{_esc(str(k))}</td><td>{_esc(str(v))}</td></tr>\n'
+                                html += '</table>\n'
+                            else:
+                                html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                         f'<pre class="output">{_esc(f.read_text())}</pre>\n')
+                        except (json.JSONDecodeError, OSError):
+                            content = _read_text(f, max_lines=200)
+                            if content:
+                                html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                         f'<pre class="output">{_esc(content)}</pre>\n')
                     else:
                         content = _read_text(f, max_lines=200)
                         if content:
@@ -2101,6 +2124,24 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                                 diffs.append((f"{out_path}/{name}",
                                     _render_standalone_image(curr_uri, name)))
                             continue
+                    # Metrics comparison (render as side-by-side table)
+                    if _resolve_artifact_type(name, config) == "metrics":
+                        try:
+                            curr_m = json.loads(curr_f.read_text()) if curr_f else {}
+                            base_m = json.loads(base_f.read_text()) if base_f else {}
+                            if curr_m or base_m:
+                                all_keys = list(dict.fromkeys(list(base_m.keys()) + list(curr_m.keys())))
+                                rows = f'<div class="file-badge">{_esc(f"{out_path}/{name}")}</div>\n'
+                                rows += '<table class="metrics-table"><tr><th>Metric</th><th>Baseline</th><th>Current</th></tr>\n'
+                                for k in all_keys:
+                                    bv = base_m.get(k, "—")
+                                    cv = curr_m.get(k, "—")
+                                    rows += f'<tr><td>{_esc(str(k))}</td><td>{_esc(str(bv))}</td><td>{_esc(str(cv))}</td></tr>\n'
+                                rows += '</table>\n'
+                                diffs.append((f"{out_path}/{name}", rows))
+                                continue
+                        except (json.JSONDecodeError, OSError):
+                            pass
                     # Text comparison
                     try:
                         ct = curr_f.read_text() if curr_f else ""
