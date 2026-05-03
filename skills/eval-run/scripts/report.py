@@ -2083,6 +2083,24 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                         # Fall through to text diff if rendering failed
                         if curr_uri or base_uri:
                             continue
+                    # Graph JSON comparison (render to SVG)
+                    if _resolve_artifact_type(name, config) == "graph":
+                        curr_svg = _render_graph_spec_to_svg(curr_f) if curr_f else ""
+                        base_svg = _render_graph_spec_to_svg(base_f) if base_f else ""
+                        if curr_svg or base_svg:
+                            curr_uri = _svg_to_data_uri(curr_svg) if curr_svg else ""
+                            base_uri = _svg_to_data_uri(base_svg) if base_svg else ""
+                            if curr_uri and base_uri:
+                                diffs.append((f"{out_path}/{name}",
+                                    _render_image_compare(
+                                        curr_uri, base_uri,
+                                        gen_label="Current",
+                                        ref_label="Baseline",
+                                        ref_class="img-label-bl")))
+                            elif curr_uri:
+                                diffs.append((f"{out_path}/{name}",
+                                    _render_standalone_image(curr_uri, name)))
+                            continue
                     # Text comparison
                     try:
                         ct = curr_f.read_text() if curr_f else ""
