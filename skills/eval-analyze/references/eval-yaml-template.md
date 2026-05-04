@@ -116,9 +116,13 @@ inputs:
     #     Only allow if targeting a test instance or emulator.
 
 # Outputs — what the skill produces (files on disk or tool calls)
+# IMPORTANT: path must be a named subdirectory (e.g., "output", "artifacts").
+# Never use "." — the harness cleans output dirs between runs, and "." would
+# delete the entire project. For skills that only write to stdout (captured
+# via traces.stdout), use "output" as a conventional empty directory.
 outputs:
   # File artifacts on disk
-  - path: <output directory>
+  - path: <output directory, e.g. "output" or "artifacts" — never ".">
     schema: |
       <natural language description of artifacts in this directory>
     # batch_pattern: "PREFIX-{n:03d}"
