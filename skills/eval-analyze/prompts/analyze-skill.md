@@ -32,10 +32,15 @@ inputs:
 
 outputs:
   # File artifacts written to disk — field names match eval.yaml
-  - path: "<directory where the pipeline writes final outputs>"
+  # IMPORTANT: path must be a named subdirectory (e.g., "output", "artifacts"),
+  # never "." — the harness cleans output dirs between runs.
+  # For stdout-only skills, use "output" as a conventional empty directory.
+  - path: "<named subdirectory for outputs, e.g. 'output' or 'artifacts'>"
     schema: |
       <what is produced here — file types, naming patterns, content
-       structure. Describe what you actually observed, not generic patterns.>
+       structure. Describe what you actually observed, not generic patterns.
+       If the skill writes to stdout rather than files, note that judges
+       should read outputs["stdout"] instead of outputs["files"].>
   # Tool call side effects (if the skill calls external APIs)
   # - tool: "<tool name pattern, e.g. mcp__atlassian__create_issue>"
   #   schema: |
