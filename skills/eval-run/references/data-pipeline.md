@@ -104,10 +104,18 @@ $AGENT_EVAL_RUNS_DIR/{id}/
         RFE-001-slug.md
       artifacts/reviews/  # Files from outputs[1].path
         RFE-001-review.md
+      _modified/          # In-place edits (auto-detected via git diff)
+        source.md
     case-002-name/
       artifacts/
         RFE-002-slug.md
+      _modified/
+        source.md
 ```
+
+### In-place file edits
+
+Skills that modify input files using the Edit tool (rather than writing to an output directory) are handled automatically. `workspace.py` creates a git commit of the initial workspace state before execution. After execution, `collect.py` runs `git diff HEAD` to detect modified files and copies them to a `_modified/` directory under each case's run output. No extra `outputs` config is needed.
 
 ## 4. Collection → Scoring
 
@@ -119,10 +127,19 @@ $AGENT_EVAL_RUNS_DIR/{id}/
     "files": {
         "artifacts/RFE-001-slug.md": "<full file content>",
         "artifacts/reviews/RFE-001-review.md": "<full file content>",
+        # In-place edits (auto-collected via git diff)
+        "_modified/source.md": "<edited file content>",
     },
     "artifacts_content": "<content of first file in artifacts/>",
     "artifacts_file": "/path/to/artifacts/RFE-001-slug.md",
     "reviews_content": "<content of first file in reviews/>",
+
+    # --- In-place edits (convenience access) ---
+    # Same content as files["_modified/..."] but keyed by filename only.
+    # Use this for direct access: outputs.get("modified_files", {}).get("source.md")
+    "modified_files": {
+        "source.md": "<edited file content>",
+    },
 
     # --- Tool calls (from outputs with tool) ---
     "tool_calls": [
@@ -143,10 +160,15 @@ $AGENT_EVAL_RUNS_DIR/{id}/
     "stdout": "<full stdout.log content>",
     "stderr": "<full stderr.log content>",
 
+    # --- Annotations (from dataset case directory) ---
+    "annotations": {"expected_voice": "technical", "difficulty": "easy"},
+
     # --- Context ---
     "case_dir": "/absolute/path/to/case"
 }
 ```
+
+**Note on `{{ outputs }}` in LLM judges**: The `{{ outputs }}` template variable renders ALL entries in `files`, including `_modified/` entries. Each file appears as a markdown section with its path as the heading. Modified files will appear as `### _modified/source.md` followed by the edited content.
 
 **Key naming convention for convenience keys**: for an output with `path: "artifacts/rfe-tasks"`, the convenience key is `rfe-tasks_content` (the last directory component + `_content`). For `path: "."`, the key is `main_content`.
 
@@ -190,3 +212,31 @@ For each judge across all cases:
 | `metrics: true` | Capture execution metadata | `$AGENT_EVAL_RUNS_DIR/{id}/run_result.json` | `outputs["exit_code"]`, `["duration_s"]`, `["cost_usd"]`, `["num_turns"]`, `["token_usage"]` |
 
 Note: `events` being false doesn't prevent tool call extraction — tool calls are extracted from stdout regardless if `outputs` has `tool:` entries. The `events` flag controls whether the full event stream is stored.
+
+### Important: stdout format for Claude Code runner
+
+When `runner.type: claude-code`, `outputs["stdout"]` contains the **raw JSONL event stream** from `claude --print`, not plain text. Each line is a JSON object with `type` (`user`, `assistant`, `system`, `result`). Assistant text is in objects like:
+
+```json
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "..."}]}}
+```
+
+**For check judges**: if you need to scan the skill's text output, extract it from the JSONL rather than regex-matching the raw stream (which also contains the original input, tool calls, and tool results). Example:
+
+```python
+import json
+texts = []
+for line in outputs.get("stdout", "").splitlines():
+    try:
+        evt = json.loads(line)
+    except (json.JSONDecodeError, ValueError):
+        continue
+    if evt.get("type") != "assistant" or evt.get("parent_tool_use_id"):
+        continue
+    for block in evt.get("message", {}).get("content", []):
+        if block.get("type") == "text":
+            texts.append(block["text"])
+rewritten_text = "\n".join(texts)
+```
+
+**For LLM judges**: prefer `{{ outputs }}` (renders file artifacts and modified files as markdown) over `{{ stdout }}` (not a recognized template variable). If the skill edits files in-place, the rewritten content appears in `{{ outputs }}` via the `_modified/` collection.
