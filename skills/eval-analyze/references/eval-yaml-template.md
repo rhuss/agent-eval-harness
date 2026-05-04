@@ -138,6 +138,13 @@ outputs:
   #   schema: |
   #     <what this tool call represents and what fields matter>
 
+# In-place edits: if the skill modifies input files (e.g., editing source.md
+# via the Edit tool), those changes are automatically collected into
+# outputs["modified_files"] and outputs["files"]["_modified/filename"].
+# No extra config needed — the harness diffs the workspace against its
+# initial state after execution. Judges can access modified file content
+# directly: outputs.get("modified_files", {}).get("source.md", "")
+
 # Traces — execution data to capture for judges
 traces:
   stdout: true     # Capture stdout.log
@@ -247,6 +254,7 @@ Keep check scripts short (under 15 lines). They receive an `outputs` dict — **
 
 Key fields in `outputs`:
 - `outputs["files"]` — dict of `{relative_path: file_content}`, e.g. `{"artifacts/rfe-tasks/RFE-001.md": "# Summary\n..."}`
+- `outputs["modified_files"]` — dict of `{filename: content}` for files modified in-place during execution (e.g., `{"source.md": "edited content..."}`)
 - `outputs["case_dir"]` — absolute path to the per-case output directory
 - `outputs["exit_code"]`, `outputs["duration_s"]`, `outputs["cost_usd"]`, `outputs["num_turns"]` — execution metadata
 - `outputs["tool_calls"]` — list of captured tool calls

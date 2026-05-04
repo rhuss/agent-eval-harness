@@ -120,6 +120,25 @@ def load_case_record(case_dir, config, run_id=None, runs_dir=None):
                     pass
                 break
 
+    # --- Modified files (in-place edits collected by collect.py) ---
+    modified_dir = case_dir / "_modified"
+    if modified_dir.exists():
+        modified = {}
+        for f in sorted(modified_dir.rglob("*")):
+            if not f.is_file() or f.is_symlink():
+                continue
+            _resolve_under(case_dir, f)
+            rel = str(f.relative_to(modified_dir))
+            try:
+                content = f.read_text()
+                record["files"][f"_modified/{rel}"] = content
+                modified[rel] = content
+            except UnicodeDecodeError:
+                record["files"][f"_modified/{rel}"] = {
+                    "_binary": True, "path": str(f), "name": f.name}
+        if modified:
+            record["modified_files"] = modified
+
     # --- Execution metadata (from run_result.json) ---
     if run_id and config.traces.metrics:
         run_result_path = runs_dir / run_id / "run_result.json"

@@ -210,6 +210,18 @@ def _create_per_case_workspace(workspace, case_dirs, config, args):
                 else:
                     out.mkdir(parents=True, exist_ok=True)
 
+        # Snapshot initial state so collect.py can diff for in-place edits
+        _git_env = {**os.environ,
+                    "GIT_AUTHOR_NAME": "eval-harness",
+                    "GIT_AUTHOR_EMAIL": "eval@harness",
+                    "GIT_COMMITTER_NAME": "eval-harness",
+                    "GIT_COMMITTER_EMAIL": "eval@harness"}
+        subprocess.run(["git", "-C", str(case_ws), "add", "-A"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(case_ws), "commit", "-q",
+                        "-m", "initial", "--allow-empty"],
+                       check=True, capture_output=True, env=_git_env)
+
         # Symlink project resources (skip .claude — we create our own)
         for name in symlink_names:
             if name == ".claude":
