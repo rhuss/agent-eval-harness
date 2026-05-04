@@ -15,12 +15,19 @@ import argparse
 import json
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import yaml
 
 from agent_eval.config import EvalConfig
+
+# Files/dirs created by the harness infrastructure, not by the skill
+_HARNESS_PATHS = {
+    ".claude", ".git", "stdout.log", "stderr.log",
+    "run_result.json", "batch.yaml", "case_order.yaml",
+}
 
 
 def _safe_path_component(value, field):
@@ -178,6 +185,17 @@ def _collect_per_case(workspace, output_dir, config):
 
             results.setdefault(case_id, {})[out_path] = len(files)
 
+        # Collect files modified in-place during execution
+        modified = _collect_modified_files(case_dir, config)
+        if modified:
+            mod_output = output_dir / "cases" / case_id / "_modified"
+            mod_output.mkdir(parents=True, exist_ok=True)
+            for rel_path, abs_path in modified:
+                dest = mod_output / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(abs_path, dest)
+            results.setdefault(case_id, {})["_modified"] = len(modified)
+
     # Save collection summary
     with open(output_dir / "collection.json", "w") as f:
         json.dump(results, f, indent=2)
@@ -188,6 +206,56 @@ def _collect_per_case(workspace, output_dir, config):
 
     if not results:
         print("WARNING: no artifacts collected", file=sys.stderr)
+
+
+def _collect_modified_files(case_dir, config):
+    """Find files modified or created during skill execution.
+
+    Uses git diff against the initial commit (created by workspace.py)
+    to detect in-place edits. Filters out harness infrastructure and
+    configured output directories.
+    """
+    git_dir = case_dir / ".git"
+    if not git_dir.exists():
+        return []
+
+    output_dirs = {o.path for o in config.outputs if o.path}
+
+    try:
+        # Modified tracked files
+        diff = subprocess.run(
+            ["git", "-C", str(case_dir), "diff", "--name-only", "HEAD"],
+            capture_output=True, text=True, check=True,
+        )
+        # New untracked files (excluding harness paths)
+        untracked = subprocess.run(
+            ["git", "-C", str(case_dir), "ls-files",
+             "--others", "--exclude-standard"],
+            capture_output=True, text=True, check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
+
+    all_changed = set()
+    for line in (diff.stdout + untracked.stdout).splitlines():
+        line = line.strip()
+        if line:
+            all_changed.add(line)
+
+    result = []
+    for rel in sorted(all_changed):
+        parts = Path(rel).parts
+        if not parts:
+            continue
+        if parts[0] in _HARNESS_PATHS:
+            continue
+        if parts[0] in output_dirs:
+            continue
+        abs_path = case_dir / rel
+        if abs_path.is_file() and not abs_path.is_symlink():
+            result.append((rel, abs_path))
+
+    return result
 
 
 def _collect_batch(files, case_order, batch_pattern):

@@ -45,6 +45,11 @@ outputs:
   # - tool: "<tool name pattern, e.g. mcp__atlassian__create_issue>"
   #   schema: |
   #     <what this tool call does and what fields in its input/output matter>
+  edits_in_place: <true|false>
+  # Set to true if the skill modifies input files (e.g., using the Edit tool
+  # on source.md) rather than writing to an output directory. The harness
+  # automatically collects these changes into outputs["modified_files"].
+  # Judges access them as: outputs.get("modified_files", {}).get("filename")
 
 sub_skills:
   - name: "<sub-skill name>"
