@@ -233,7 +233,9 @@ def _collect_modified_files(case_dir, config):
              "--others", "--exclude-standard"],
             capture_output=True, text=True, check=True,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"  {case_dir.name}: no modified files (git diff failed: {e})",
+              file=sys.stderr)
         return []
 
     all_changed = set()

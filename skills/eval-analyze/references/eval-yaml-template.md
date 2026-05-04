@@ -144,6 +144,11 @@ outputs:
 # No extra config needed — the harness diffs the workspace against its
 # initial state after execution. Judges can access modified file content
 # directly: outputs.get("modified_files", {}).get("source.md", "")
+#
+# For skills that ONLY edit in-place (no output directory), you still need
+# at least one outputs entry with a path. Use a placeholder directory name
+# (e.g., "output") — the directory may be empty, but judges will receive
+# modified files via outputs["modified_files"] and {{ outputs }} regardless.
 
 # Traces — execution data to capture for judges
 traces:
@@ -283,6 +288,21 @@ Example check judge — find files by path prefix and read their content:
               return (False, f"{fname}: missing score")
       return (True, f"{len(reviews)} reviews valid")
 ```
+
+Example check judge for in-place edits (skills that edit input files via Edit tool):
+```yaml
+  - name: source_modified
+    check: |
+      modified = outputs.get("modified_files", {})
+      text = modified.get("source.md", "")
+      if not text.strip():
+          return (False, "source.md was not modified")
+      if len(text.strip()) < 50:
+          return (False, f"Modified source.md too short ({len(text.strip())} chars)")
+      return (True, f"source.md modified ({len(text)} chars)")
+```
+
+**Note on `{{ outputs }}` and modified files**: Modified files appear in `outputs["files"]` with a `_modified/` prefix (e.g., `_modified/source.md`). The `{{ outputs }}` template variable in LLM judge prompts renders ALL entries from `outputs["files"]`, so modified files are automatically included. LLM judges see them as `### _modified/source.md` sections.
 
 **Error handling in check judges:** Use `.get()` with defaults for all dict lookups — if the skill produced no output or failed, keys may be missing. Return `(False, "reason")` for missing data rather than letting exceptions propagate:
 ```yaml
