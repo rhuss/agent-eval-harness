@@ -181,31 +181,53 @@ def _image_to_data_uri(path: Path) -> str:
         return ""
 
 
-def _find_gold_standard_image(case_id: str, dataset_path: str):
-    """Find a gold standard image for a case from the dataset annotations."""
+def _find_gold_standard_images(case_id: str, dataset_path: str):
+    """Find gold standard images for a case from the dataset annotations.
+
+    Returns a dict with keys 'image' (PNG/SVG from file) and 'diagram'
+    (SVG rendered from the gold standard source file, e.g. D2 or drawio).
+    Either or both may be None.
+    """
+    result = {"image": None, "diagram_uri": None}
     if not dataset_path:
-        return None
+        return result
     dataset_root = Path(dataset_path).resolve()
     case_ds = (dataset_root / case_id).resolve()
     if not case_ds.is_relative_to(dataset_root):
-        return None
+        return result
     ann_path = case_ds / "annotations.yaml"
     if not ann_path.is_file() or ann_path.is_symlink():
-        return None
+        return result
     ann = _load_yaml(ann_path)
     gold_name = ann.get("gold_diagram")
     if not gold_name:
-        return None
+        return result
     stem = Path(gold_name).stem
-    full_stem = gold_name  # e.g. "gold-standard.drawio"
+    full_stem = gold_name  # e.g. "gold-standard.drawio" or "gold-standard.d2"
+
+    # Find a pre-rendered image (PNG, SVG file)
     for suffix in _IMAGE_SUFFIXES:
         for candidate_name in [f"{full_stem}{suffix}", f"{stem}{suffix}"]:
             candidate = (case_ds / candidate_name).resolve()
             if (candidate.is_relative_to(dataset_root)
                     and candidate.is_file()
                     and not candidate.is_symlink()):
-                return candidate
-    return None
+                result["image"] = candidate
+                break
+        if result["image"]:
+            break
+
+    # Render the gold standard source file to SVG for diagram comparison
+    gold_source = (case_ds / gold_name).resolve()
+    if (gold_source.is_file() and not gold_source.is_symlink()
+            and gold_source.is_relative_to(dataset_root)
+            and gold_source.suffix in _DIAGRAM_SUFFIXES):
+        sibs = {s.name for s in case_ds.iterdir()}
+        svg_uri = _try_render_diagram(gold_source, sibs)
+        if svg_uri:
+            result["diagram_uri"] = svg_uri
+
+    return result
 
 
 _DIAGRAM_SUFFIXES = {".d2", ".drawio"}
@@ -253,6 +275,107 @@ def _render_drawio_to_svg(drawio_path: Path) -> str:
             Path(tmp_path).unlink(missing_ok=True)
         except (NameError, OSError):
             pass
+
+
+def _render_graph_spec_to_svg(json_path: Path) -> str:
+    """Render a graph JSON to SVG via D2. Supports both graph-spec format
+    (nodes/edges arrays) and layout-plan format (elements array with types)."""
+    try:
+        spec = json.loads(json_path.read_text())
+        if not isinstance(spec, dict):
+            return ""
+
+        nodes = []
+        edges = []
+
+        if "nodes" in spec:
+            # graph-spec format
+            nodes = spec["nodes"]
+            edges = spec.get("edges", [])
+        elif "elements" in spec:
+            # layout-plan format
+            for elem in spec["elements"]:
+                etype = elem.get("type", "")
+                if etype in ("node", "container"):
+                    label = elem.get("label_html", elem.get("id", ""))
+                    label = label.split("<b>")[-1].split("</b>")[0] if "<b>" in label else label
+                    label = label.split("<br>")[0].strip()
+                    nodes.append({"id": elem["id"], "label": label,
+                                  "role": "external" if "dashed" in elem.get("style", "") else "processing"})
+                elif etype == "edge":
+                    edges.append({"from": elem["from"], "to": elem["to"],
+                                  "label": elem.get("label", ""),
+                                  "style": "dashed" if "dashed=1" in elem.get("style", "") else "solid"})
+        else:
+            return ""
+
+        if not nodes:
+            return ""
+
+        # Convert to D2
+        def _d2_esc(s):
+            return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+        lines = ["direction: right", ""]
+        for n in nodes:
+            label = _d2_esc(n.get("label", n["id"]))
+            style = ""
+            if n.get("role") == "external":
+                style = " { style.stroke-dash: 3 }"
+            lines.append(f'{n["id"]}: "{label}"{style}')
+        lines.append("")
+        for e in edges:
+            label = _d2_esc(e.get("label", ""))
+            label_part = f': "{label}"' if label else ""
+            style = " { style.stroke-dash: 3 }" if e.get("is_back_edge") or e.get("style") == "dashed" else ""
+            lines.append(f'{e["from"]} -> {e["to"]}{label_part}{style}')
+        d2_text = "\n".join(lines)
+
+        salt = hashlib.md5(str(json_path).encode()).hexdigest()[:8]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".d2", delete=False) as d2_tmp:
+            d2_tmp.write(d2_text)
+            d2_path = d2_tmp.name
+        with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as svg_tmp:
+            svg_path = svg_tmp.name
+        subprocess.run(
+            ["d2", "--bundle", "--layout", "elk", "--salt", salt, d2_path, svg_path],
+            check=True, capture_output=True, text=True, timeout=30,
+        )
+        svg_text = Path(svg_path).read_text()
+        return svg_text
+    except (FileNotFoundError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired, OSError, json.JSONDecodeError):
+        return ""
+    finally:
+        for p in ("d2_path", "svg_path"):
+            try:
+                Path(locals().get(p, "")).unlink(missing_ok=True)
+            except (OSError, TypeError):
+                pass
+
+
+def _resolve_artifact_type(filename: str, config: dict) -> str:
+    """Resolve the semantic type of an artifact from eval.yaml outputs.types.
+
+    Checks explicit filenames first, then glob patterns.
+    Returns the type string (e.g. 'graph') or empty string.
+    """
+    import fnmatch
+    for output in config.get("outputs", []):
+        if isinstance(output, dict):
+            types = output.get("types") or {}
+        else:
+            types = getattr(output, "types", None) or {}
+        if not types:
+            continue
+        # Exact match first
+        if filename in types:
+            return types[filename]
+        # Glob patterns
+        for pattern, typ in types.items():
+            if fnmatch.fnmatch(filename, pattern):
+                return typ
+    return ""
 
 
 def _svg_to_data_uri(svg_text: str) -> str:
@@ -545,6 +668,12 @@ a:hover { text-decoration: underline; }
 .img-compare-onion .onion-label { text-align: center; font-size: 0.82em; color: var(--text-muted); margin-top: 2px; }
 
 /* Diagram source collapsible */
+/* Metrics table */
+.metrics-table { font-size: 0.88em; margin: 0.5em 0; border-collapse: collapse; }
+.metrics-table th { text-align: left; padding: 4px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text-soft); }
+.metrics-table td { padding: 4px 12px; border-bottom: 1px solid var(--border); }
+.metrics-table td:last-child { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 600; }
+
 .diagram-source { margin-top: 0.4em; }
 .diagram-source summary { font-size: 0.85em; color: var(--text-muted); cursor: pointer; padding: 4px 0; }
 .diagram-source summary:hover { color: var(--text); }
@@ -1518,7 +1647,6 @@ def _md_table_to_html(table_lines):
             import re as _re
             stripped = c.strip()
             bare = stripped.strip("*_")
-            _STATUS_KW = {"PASS", "FIXED", "FAIL", "REGRESSION", "SKIP", "SKIPPED"}
             _STATUS_CLS = {"PASS": "pass", "FIXED": "pass", "FAIL": "fail",
                            "REGRESSION": "fail", "SKIP": "skip", "SKIPPED": "skip"}
             match = _re.match(r'^(\*{0,2}_?)(PASS|FIXED|FAIL|REGRESSION|SKIP|SKIPPED)(_?\*{0,2})(.*)', bare)
@@ -1779,19 +1907,29 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
         has_baseline = bl_cases_dir and (bl_cases_dir / case_id).exists()
 
         # Resolve gold standard image for comparison
-        gold_img_path = _find_gold_standard_image(case_id, dataset_path)
-        gold_data_uri = _image_to_data_uri(gold_img_path) if gold_img_path else ""
+        gold = _find_gold_standard_images(case_id, dataset_path)
+        gold_image_uri = _image_to_data_uri(gold["image"]) if gold["image"] else ""
+        gold_diagram_uri = gold.get("diagram_uri") or ""
 
         # Execution logs at the case root — not skill output, exclude from
         # the report.  Only exclude root-level files, not nested ones with the
         # same name (a skill could legitimately produce artifacts/stdout.log).
-        _EXEC_LOG_PATHS = {"stdout.log", "stderr.log", "run_result.json"}
+        _EXEC_LOG_PATHS = {"stdout.log", "stderr.log", "run_result.json", "input.yaml"}
         if case_dir.exists():
-            files = sorted(f for f in case_dir.rglob("*") if f.is_file()
+            def _file_sort_key(f):
+                """Sort visual artifacts first: images, then diagrams, then the rest."""
+                if _is_image_file(f):
+                    return (0, f.name)
+                if f.suffix in _DIAGRAM_SUFFIXES:
+                    return (1, f.name)
+                return (2, f.name)
+
+            files = sorted((f for f in case_dir.rglob("*") if f.is_file()
                            and str(f.relative_to(case_dir)) not in _EXEC_LOG_PATHS
                            and not str(f.relative_to(case_dir)).startswith("subagents/")
                            and not any(str(f.relative_to(case_dir)).startswith(sp)
-                                       for sp in shared_paths))
+                                       for sp in shared_paths)),
+                           key=_file_sort_key)
             if has_baseline:
                 # Exclude files under output_paths — they'll be in the diff
                 files = [f for f in files
@@ -1821,9 +1959,9 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                         data_uri = _image_to_data_uri(f)
                         if data_uri:
                             html += f'<div class="file-badge">{_esc(str(rel))}</div>\n'
-                            if gold_data_uri:
+                            if gold_image_uri:
                                 html += _render_image_compare(
-                                    data_uri, gold_data_uri,
+                                    data_uri, gold_image_uri,
                                     gen_label="Generated",
                                     ref_label="Gold Standard",
                                     ref_class="img-label-ref")
@@ -1835,12 +1973,17 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                                      f'<span class="skip">({size} bytes, unreadable)</span></div>\n')
                     elif f.suffix in _DIAGRAM_SUFFIXES:
                         sibling_names = {s.name for s in f.parent.iterdir()}
+                        # Skip if a rendered sibling (e.g. .drawio.png) is already displayed
+                        has_rendered_sibling = (
+                            f"{f.name}.png" in sibling_names
+                            or f"{f.name}.svg" in sibling_names
+                        )
                         svg_uri = _try_render_diagram(f, sibling_names)
                         if svg_uri:
                             html += f'<div class="file-badge">{_esc(str(rel))}</div>\n'
-                            if gold_data_uri:
+                            if gold_diagram_uri:
                                 html += _render_image_compare(
-                                    svg_uri, gold_data_uri,
+                                    svg_uri, gold_diagram_uri,
                                     gen_label="Generated",
                                     ref_label="Gold Standard",
                                     ref_class="img-label-ref")
@@ -1850,7 +1993,39 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                             if source:
                                 html += (f'<details class="diagram-source"><summary>Source</summary>\n'
                                          f'<pre class="output">{_esc(source)}</pre></details>\n')
+                        elif not has_rendered_sibling:
+                            content = _read_text(f, max_lines=200)
+                            if content:
+                                html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                         f'<pre class="output">{_esc(content)}</pre>\n')
+                    elif _resolve_artifact_type(f.name, config) == "graph":
+                        svg = _render_graph_spec_to_svg(f)
+                        if svg:
+                            svg_uri = _svg_to_data_uri(svg)
+                            html += f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                            html += _render_standalone_image(svg_uri, str(rel))
+                            content = _read_text(f, max_lines=200)
+                            if content:
+                                html += (f'<details class="diagram-source"><summary>Source</summary>\n'
+                                         f'<pre class="output">{_esc(content)}</pre></details>\n')
                         else:
+                            content = _read_text(f, max_lines=200)
+                            if content:
+                                html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                         f'<pre class="output">{_esc(content)}</pre>\n')
+                    elif _resolve_artifact_type(f.name, config) == "metrics":
+                        try:
+                            metrics = json.loads(f.read_text())
+                            if isinstance(metrics, dict) and metrics:
+                                html += f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                html += '<table class="metrics-table"><tr><th>Metric</th><th>Value</th></tr>\n'
+                                for k, v in metrics.items():
+                                    html += f'<tr><td>{_esc(str(k))}</td><td>{_esc(str(v))}</td></tr>\n'
+                                html += '</table>\n'
+                            else:
+                                html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
+                                         f'<pre class="output">{_esc(f.read_text())}</pre>\n')
+                        except (json.JSONDecodeError, OSError):
                             content = _read_text(f, max_lines=200)
                             if content:
                                 html += (f'<div class="file-badge">{_esc(str(rel))}</div>\n'
@@ -1877,7 +2052,15 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                     continue
                 curr_files = {f.name: f for f in curr_dir.iterdir() if f.is_file()} if curr_dir.exists() else {}
                 base_files = {f.name: f for f in base_dir.iterdir() if f.is_file()} if base_dir.exists() else {}
-                for name in sorted(set(curr_files) | set(base_files)):
+                def _diff_sort_key(name):
+                    p = Path(name)
+                    if p.suffix.lower() in _IMAGE_SUFFIXES:
+                        return (0, name)
+                    if p.suffix.lower() in _DIAGRAM_SUFFIXES:
+                        return (1, name)
+                    return (2, name)
+
+                for name in sorted(set(curr_files) | set(base_files), key=_diff_sort_key):
                     curr_f = curr_files.get(name)
                     base_f = base_files.get(name)
                     # Image comparison
@@ -1903,6 +2086,11 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                     if name.endswith(tuple(_DIAGRAM_SUFFIXES)):
                         sib_c = {s.name for s in curr_dir.iterdir()} if curr_dir.exists() else set()
                         sib_b = {s.name for s in base_dir.iterdir()} if base_dir.exists() else set()
+                        # Skip if a rendered sibling (PNG) is already shown
+                        has_rendered = (f"{name}.png" in sib_c or f"{name}.svg" in sib_c
+                                        or f"{name}.png" in sib_b or f"{name}.svg" in sib_b)
+                        if has_rendered:
+                            continue
                         curr_uri = _try_render_diagram(curr_f, sib_c) if curr_f else ""
                         base_uri = _try_render_diagram(base_f, sib_b) if base_f else ""
                         if curr_uri and base_uri:
@@ -1918,6 +2106,42 @@ def _render_per_case(summary, run_dir, config, baseline_dir, review):
                         # Fall through to text diff if rendering failed
                         if curr_uri or base_uri:
                             continue
+                    # Graph JSON comparison (render to SVG)
+                    if _resolve_artifact_type(name, config) == "graph":
+                        curr_svg = _render_graph_spec_to_svg(curr_f) if curr_f else ""
+                        base_svg = _render_graph_spec_to_svg(base_f) if base_f else ""
+                        if curr_svg or base_svg:
+                            curr_uri = _svg_to_data_uri(curr_svg) if curr_svg else ""
+                            base_uri = _svg_to_data_uri(base_svg) if base_svg else ""
+                            if curr_uri and base_uri:
+                                diffs.append((f"{out_path}/{name}",
+                                    _render_image_compare(
+                                        curr_uri, base_uri,
+                                        gen_label="Current",
+                                        ref_label="Baseline",
+                                        ref_class="img-label-bl")))
+                            elif curr_uri:
+                                diffs.append((f"{out_path}/{name}",
+                                    _render_standalone_image(curr_uri, name)))
+                            continue
+                    # Metrics comparison (render as side-by-side table)
+                    if _resolve_artifact_type(name, config) == "metrics":
+                        try:
+                            curr_m = json.loads(curr_f.read_text()) if curr_f else {}
+                            base_m = json.loads(base_f.read_text()) if base_f else {}
+                            if curr_m or base_m:
+                                all_keys = list(dict.fromkeys(list(base_m.keys()) + list(curr_m.keys())))
+                                rows = f'<div class="file-badge">{_esc(f"{out_path}/{name}")}</div>\n'
+                                rows += '<table class="metrics-table"><tr><th>Metric</th><th>Baseline</th><th>Current</th></tr>\n'
+                                for k in all_keys:
+                                    bv = base_m.get(k, "—")
+                                    cv = curr_m.get(k, "—")
+                                    rows += f'<tr><td>{_esc(str(k))}</td><td>{_esc(str(bv))}</td><td>{_esc(str(cv))}</td></tr>\n'
+                                rows += '</table>\n'
+                                diffs.append((f"{out_path}/{name}", rows))
+                                continue
+                        except (json.JSONDecodeError, OSError):
+                            pass
                     # Text comparison
                     try:
                         ct = curr_f.read_text() if curr_f else ""
