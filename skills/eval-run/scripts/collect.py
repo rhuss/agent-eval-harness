@@ -259,8 +259,16 @@ def _collect_modified_files(case_dir, config):
         if any(parts[:len(op)] == op for op in output_prefixes):
             continue
         candidate = case_dir / rel
-        if candidate.is_symlink() or any(p.is_symlink() for p in candidate.parents
-                                         if p != case_dir):
+        if candidate.is_symlink():
+            continue
+        has_symlink_ancestor = False
+        for p in candidate.parents:
+            if p == case_dir:
+                break
+            if p.is_symlink():
+                has_symlink_ancestor = True
+                break
+        if has_symlink_ancestor:
             continue
         abs_path = candidate.resolve()
         if not abs_path.is_relative_to(case_dir.resolve()):
