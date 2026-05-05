@@ -123,9 +123,12 @@ class ClaudeCodeRunner(EvalRunner):
             cmd.extend(["--allowed-tools", ",".join(allow)])
 
         # Build the skill invocation prompt (passed via stdin)
-        prompt = f"/{skill_name}"
-        if args:
-            prompt += f" {args}"
+        if skill_name:
+            prompt = f"/{skill_name}"
+            if args:
+                prompt += f" {args}"
+        else:
+            prompt = args or ""
 
         start = time.monotonic()
         stdout_lines = []
