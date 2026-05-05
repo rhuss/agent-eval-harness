@@ -69,8 +69,8 @@ oc create secret generic vertex-ai-credentials \
 ### Step 6: Register provider via ConfigMap
 
 **Critical learnings**:
-1. ConfigMap must be in `redhat-ods-applications` namespace (NOT evalhub)
-2. Must include all TrustyAI labels: `app.kubernetes.io/part-of: trustyai`, `app.opendatahub.io/trustyai: "true"`, `platform.opendatahub.io/part-of: trustyai`
+1. ConfigMap must be in the TrustyAI operator namespace, typically `redhat-ods-applications` (NOT evalhub)
+2. Two labels are used for provider discovery: `trustyai.opendatahub.io/evalhub-provider-type` and `trustyai.opendatahub.io/evalhub-provider-name`. Standard ODH labels (`app.kubernetes.io/part-of: trustyai`, `app.opendatahub.io/trustyai: "true"`) are conventional but not required for discovery
 3. YAML format must match built-in providers (bare string metrics, `runtime.k8s.entrypoint` array, `runtime.local.command` field)
 4. EvalHub CR `spec.providers[]` must list ALL desired providers (built-in + custom)
 5. Pod restart needed after ConfigMap changes
@@ -202,8 +202,8 @@ curl -sk -X POST \
 | `/data/eval.yaml` not found | Operator mounts emptyDir at `/data` | Use `/app/eval-config/` instead |
 | `oc cp` fails | UBI minimal has no `tar` | Use full `ubi:latest` image |
 | PVC permission denied | Root-owned mount, non-root pod | initContainer with `runAsUser: 0` to chmod |
-| Provider not found | ConfigMap in wrong namespace | Must be in `redhat-ods-applications` |
-| Provider not loading | Missing TrustyAI labels | Add `app.kubernetes.io/part-of: trustyai` etc. |
+| Provider not found | ConfigMap in wrong namespace | Must be in TrustyAI operator namespace (typically `redhat-ods-applications`) |
+| Provider not loading | Missing discovery labels | Add `trustyai.opendatahub.io/evalhub-provider-type` and `evalhub-provider-name` |
 | YAML format mismatch | Metrics as objects not strings | Match built-in format: bare string metrics |
 | API 401 unauthorized | Wrong ServiceAccount | Use `evalhub-service` SA, not `default` |
 | API 401 bad request | Missing X-Tenant header | Always include `X-Tenant: evalhub` |

@@ -22,8 +22,10 @@ docker push image-registry.openshift-image-registry.svc:5000/<namespace>/agent-e
 
 ## Register Provider
 
-Providers are registered via ConfigMap in the `redhat-ods-applications` namespace
-(not the EvalHub CR namespace). All five labels are required:
+Providers are registered via ConfigMap in the same namespace as the TrustyAI
+operator (typically `redhat-ods-applications`), not the EvalHub CR namespace.
+EvalHub discovers providers using two labels (`evalhub-provider-type` and
+`evalhub-provider-name`); the remaining labels are standard ODH labels:
 
 ```bash
 oc apply -f - <<EOF
@@ -35,7 +37,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: trustyai
     app.opendatahub.io/trustyai: "true"
-    trustyai.opendatahub.io/evalhub-provider-type: custom
+    trustyai.opendatahub.io/evalhub-provider-type: system
     trustyai.opendatahub.io/evalhub-provider-name: agent-eval
     opendatahub.io/managed: "true"
 data:
