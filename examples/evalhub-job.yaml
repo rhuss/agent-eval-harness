@@ -1,0 +1,21 @@
+# Example EvalHub job submission config
+#
+# Submit with: evalhub eval run --config examples/evalhub-job.yaml
+#
+# Prerequisites:
+#   1. Provider registered via ConfigMap (see provider/configmap-template.yaml)
+#   2. Provider listed in EvalHub CR spec.providers[]
+#   3. Test cases available (baked into container or in S3)
+
+name: skill-eval-demo
+model:
+  url: "vertex-ai"
+  name: "claude-sonnet-4-6"
+benchmarks:
+  - provider_id: "agent-eval"
+    id: "skill-eval"
+    parameters:
+      s3_bucket: "my-eval-bucket"
+      s3_prefix: "datasets/my-skill/cases/"
+experiment:
+  name: "skill-eval-demo"

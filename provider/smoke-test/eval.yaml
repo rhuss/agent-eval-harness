@@ -1,0 +1,31 @@
+skill: ""
+execution:
+  mode: case
+  arguments: "{prompt}"
+  timeout: 120
+runner:
+  type: claude-code
+  effort: low
+dataset:
+  path: cases
+  schema: "Each case has a prompt field"
+outputs:
+  - path: output
+    schema: "Text response from Claude"
+judges:
+  - name: completed
+    description: Check that the skill ran successfully
+    check: |
+      return True, "Completed"
+  - name: correct_answer
+    description: Check that the response contains the correct answer
+    check: |
+      stdout = outputs.get("stdout", "")
+      if "4" in stdout:
+          return True, "Correct answer found"
+      return False, f"Expected '4' in response, got: {stdout[:200]}"
+thresholds:
+  completed:
+    min_pass_rate: 1.0
+  correct_answer:
+    min_pass_rate: 1.0

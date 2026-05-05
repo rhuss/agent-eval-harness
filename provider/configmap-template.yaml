@@ -1,0 +1,72 @@
+# EvalHub Provider ConfigMap for agent-eval
+#
+# NAMESPACE: This ConfigMap MUST be created in the "redhat-ods-applications"
+# namespace, NOT in the namespace where the EvalHub CR lives. The EvalHub
+# operator watches for provider ConfigMaps only in redhat-ods-applications.
+#
+# EVALHUB CR: After applying this ConfigMap, you must also add "agent-eval"
+# to the EvalHub CR's spec.providers[] list so the operator enables it.
+#
+# Example:
+#   oc apply -f configmap-template.yaml
+#   oc edit evalhub/evalhub -n <evalhub-namespace>
+#   # Add "agent-eval" to spec.providers[]
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: evalhub-provider-agent-eval
+  namespace: redhat-ods-applications
+  labels:
+    app.kubernetes.io/part-of: trustyai
+    app.opendatahub.io/trustyai: "true"
+    trustyai.opendatahub.io/evalhub-provider-type: custom
+    trustyai.opendatahub.io/evalhub-provider-name: agent-eval
+    opendatahub.io/managed: "true"
+data:
+  provider.yaml: |
+    name: agent-eval
+    id: agent-eval
+    title: Agent Skill Evaluation
+    description: >
+      Evaluate AI coding agent skills (Claude Code, Agent SDK) against test case
+      datasets with configurable judges. Measures output quality, execution cost,
+      token usage, and regression detection.
+    version: "0.1.0"
+
+    benchmarks:
+      - id: skill-eval
+        name: skill-eval
+        description: "Generic agent skill evaluation benchmark"
+        category: agent-evaluation
+        parameters:
+          s3_bucket:
+            type: string
+            required: true
+          s3_prefix:
+            type: string
+            required: true
+          eval_config:
+            type: string
+            default: /app/eval-config/eval.yaml
+        metrics:
+          - exit_code
+          - duration_seconds
+          - cost_usd
+          - num_turns
+          - num_examples_evaluated
+        primary_score:
+          metric: exit_code
+          lower_is_better: true
+    runtime:
+      k8s:
+        image: quay.io/rhoai/agent-eval-provider:latest
+        entrypoint:
+          - python3
+          - entrypoint.py
+        cpu_request: "500m"
+        memory_request: "1Gi"
+        cpu_limit: "2"
+        memory_limit: "4Gi"
+      local:
+        command: python3 provider/entrypoint.py
