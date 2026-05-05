@@ -214,12 +214,18 @@ def _extract_assistant_text(stdout_raw):
             obj = json.loads(line)
         except (json.JSONDecodeError, ValueError):
             continue
+        if not isinstance(obj, dict):
+            continue
         found_jsonl = True
         if obj.get("type") != "assistant" or obj.get("parent_tool_use_id"):
             continue
         for block in (obj.get("message") or {}).get("content", []):
+            if not isinstance(block, dict):
+                continue
             if block.get("type") == "text":
-                texts.append(block["text"])
+                text = block.get("text")
+                if isinstance(text, str):
+                    texts.append(text)
     if texts:
         return "\n".join(texts)
     if found_jsonl:
@@ -491,8 +497,10 @@ def _make_anthropic_llm_judge(name, prompt, judge_model):
         # Render {{ stdout }} template variable
         if outputs and "{{ stdout }}" in rendered_prompt:
             stdout_raw = outputs.get("stdout", "")
-            rendered_prompt = rendered_prompt.replace(
-                "{{ stdout }}", _extract_assistant_text(stdout_raw))
+            stdout_text = _extract_assistant_text(stdout_raw)
+            if len(stdout_text) > 200_000:
+                stdout_text = stdout_text[:200_000] + "\n...[truncated]"
+            rendered_prompt = rendered_prompt.replace("{{ stdout }}", stdout_text)
 
         # Render {{ annotations }} template variable
         if outputs and "{{ annotations }}" in rendered_prompt:

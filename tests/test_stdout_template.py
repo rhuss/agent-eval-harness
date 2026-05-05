@@ -186,3 +186,33 @@ class TestExtractAssistantTextSubagentOnly:
         stdout = _jsonl(USER_EVENT, SYSTEM_EVENT, RESULT_EVENT)
         result = _extract_assistant_text(stdout)
         assert result == "(no top-level assistant text)"
+
+
+# --- Type guard edge cases (CodeRabbit review) ---
+
+class TestExtractAssistantTextTypeGuards:
+    def test_scalar_json_lines_skipped(self):
+        stdout = '"just a string"\n42\ntrue\n' + json.dumps(ASSISTANT_EVENT)
+        result = _extract_assistant_text(stdout)
+        assert result == "Hello from the skill"
+
+    def test_array_json_lines_skipped(self):
+        stdout = '[1, 2, 3]\n' + json.dumps(ASSISTANT_EVENT)
+        result = _extract_assistant_text(stdout)
+        assert result == "Hello from the skill"
+
+    def test_missing_text_field_in_block(self):
+        event = {
+            "type": "assistant",
+            "message": {"content": [{"type": "text"}]},
+        }
+        result = _extract_assistant_text(json.dumps(event))
+        assert result == "(no top-level assistant text)"
+
+    def test_non_string_text_field_skipped(self):
+        event = {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": 123}]},
+        }
+        result = _extract_assistant_text(json.dumps(event))
+        assert result == "(no top-level assistant text)"
