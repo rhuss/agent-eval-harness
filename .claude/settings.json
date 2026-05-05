@@ -1,0 +1,10 @@
+{
+  "hooks": {},
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest:*)",
+      "Bash(uv:*)",
+      "Bash(git:*)"
+    ]
+  }
+}
