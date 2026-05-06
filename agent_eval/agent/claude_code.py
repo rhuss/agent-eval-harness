@@ -65,6 +65,7 @@ class ClaudeCodeRunner(EvalRunner):
         mlflow_tracking_uri: Optional[str] = None,
         log_prefix: Optional[str] = None,
         effort: Optional[str] = None,
+        **kwargs,
     ):
         self._permissions = permissions or {}
         self._subagent_model = subagent_model
