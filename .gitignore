@@ -17,6 +17,8 @@ tmp/
 mlflow.db
 mlruns/
 
+.knowledge/
+docs/superpowers/
 # Environment and secrets
 .env
 .env.*
