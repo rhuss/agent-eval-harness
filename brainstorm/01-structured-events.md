@@ -55,7 +55,9 @@ The redundancy of 4 independent JSONL parsers is the root problem, and only a sh
 
 ### Key Design Decisions
 
-**Events replace stdout for judges.** `record["stdout"]` is removed from the record dict. Judges access execution data exclusively through `record["events"]`. The `{{ stdout }}` template variable renders assistant text from events. If a judge needs data that events don't expose, we extend the events schema rather than fall back to raw JSONL. No escape hatch.
+**Events replace stdout for judges.** `record["stdout"]` is removed from the record dict. Judges access execution data exclusively through `record["events"]`. If a judge needs data that events don't expose, we extend the events schema rather than fall back to raw JSONL. No escape hatch.
+
+**`{{ stdout }}` is deprecated and errors.** The `{{ stdout }}` template variable (added in PR #57) was a workaround for the absence of structured events. Once events land, `{{ stdout }}` should raise an error pointing judge authors to the events-based replacement (e.g., a new `{{ conversation }}` template variable or direct `outputs["events"]` access in check judges). This avoids quietly reimplementing a raw-stdout workaround on top of the structured interface.
 
 **Raw stdout stays on disk for debugging.** `traces.stdout: true` controls whether `stdout.log` is kept on disk for human inspection. `traces.events: true` controls whether structured events are parsed and available to judges. Both can be true independently.
 
@@ -70,8 +72,9 @@ The redundancy of 4 independent JSONL parsers is the root problem, and only a sh
 1. New `agent_eval/events.py` module with `parse_stream_events(stdout_text) -> list[Event]`
 2. Events parsed at collection time by `collect.py`, stored as `events.json` per case
 3. `load_case_record()` loads events into `record["events"]`, removes `record["stdout"]`
-4. `{{ stdout }}` template variable renders assistant text from `record["events"]`
-5. `_extract_tool_calls()` and `_extract_assistant_text()` in score.py replaced by lookups over `record["events"]`
+4. `{{ stdout }}` template variable deprecated: raises an error with migration guidance
+5. New template variable (e.g., `{{ conversation }}` or `{{ events }}`) renders structured conversation from `record["events"]`
+6. `_extract_tool_calls()` and `_extract_assistant_text()` in score.py replaced by lookups over `record["events"]`
 6. `traces.events` config flag controls event parsing (default: true)
 7. `traces.stdout` continues to control raw `stdout.log` file retention on disk
 8. Tool results capped at a configurable size threshold with truncation marker
@@ -91,3 +94,4 @@ The redundancy of 4 independent JSONL parsers is the root problem, and only a sh
 - Whether `extract_usage()` in `stream_capture.py` should also adopt the shared parser (it runs at execution time, before collection)
 - Default value for `traces.events` (should it be true by default, replacing the current false?)
 - Migration path for existing eval.yaml configs that have check judges parsing `outputs["stdout"]` directly
+- Name for the new template variable replacing `{{ stdout }}` (candidates: `{{ conversation }}`, `{{ events }}`, `{{ transcript }}`)
