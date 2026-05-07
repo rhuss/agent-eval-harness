@@ -129,3 +129,20 @@ E2E tests invoke real Claude API calls against a fake Jira skill fixture to veri
 
 - CI integration patterns and examples
 - `traces.events` implementation — parse stream-json into structured `outputs["events"]` for judges
+
+## EvalHub Integration
+
+The `agent_eval.evalhub` package provides a custom EvalHub provider that runs
+agent skill evaluations on Red Hat OpenShift AI. The adapter:
+
+- Implements `FrameworkAdapter` from `eval-hub-sdk`
+- Downloads test cases from S3 via `s3_dataset.py`
+- Translates `eval.yaml` to EvalHub provider definitions via `config_translator.py`
+- Maps `RunResult` + judge scores to `JobResults` via `results_mapper.py`
+- Ships as a UBI9 container image (`deploy/evalhub/Containerfile`)
+
+### Local skills (unchanged)
+eval-analyze, eval-dataset, eval-optimize, eval-review — authoring workflows
+
+### EvalHub-managed (via provider)
+Execution, result storage, regression detection, OCI export (MLflow tracking is optional)
