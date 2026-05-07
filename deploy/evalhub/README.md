@@ -5,7 +5,7 @@ Custom EvalHub provider for evaluating AI coding agent skills on Red Hat OpenShi
 ## Build
 
 ```bash
-docker build --platform linux/amd64 -f deploy/evalhub/Containerfile -t quay.io/rhoai/agent-eval-provider:latest .
+podman build --platform linux/amd64 -f deploy/evalhub/Containerfile -t quay.io/rhoai/agent-eval-provider:latest .
 ```
 
 ## Push to Internal Registry
@@ -15,9 +15,9 @@ docker build --platform linux/amd64 -f deploy/evalhub/Containerfile -t quay.io/r
 oc create imagestream agent-eval-provider -n <namespace>
 
 # Tag and push
-docker tag quay.io/rhoai/agent-eval-provider:latest \
+podman tag quay.io/rhoai/agent-eval-provider:latest \
   image-registry.openshift-image-registry.svc:5000/<namespace>/agent-eval-provider:latest
-docker push image-registry.openshift-image-registry.svc:5000/<namespace>/agent-eval-provider:latest
+podman push image-registry.openshift-image-registry.svc:5000/<namespace>/agent-eval-provider:latest
 ```
 
 ## Register Provider
