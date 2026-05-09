@@ -1,6 +1,6 @@
 # Implementation Plan: Structured Event Stream for Judges
 
-**Branch**: `002-structured-events` | **Date**: 2026-05-08 | **Spec**: [spec.md](spec.md)
+**Branch**: `002-structured-events` | **Date**: 2026-05-09 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `specs/002-structured-events/spec.md`
 
 ## Summary
@@ -18,7 +18,7 @@ This removes `record["stdout"]`, consolidates `_extract_tool_calls()` and `_extr
 **Target Platform**: macOS/Linux CLI (Claude Code plugin)
 **Project Type**: CLI tool / evaluation framework
 **Performance Goals**: Event parsing adds <500ms per case
-**Constraints**: No changes to `extract_usage()` or `trace_builder.py`
+**Constraints**: No changes to `extract_usage()` or `trace_builder.py`. Batch mode does not produce events.json (case mode only). Tool input string values capped at `event_result_cap`.
 **Scale/Scope**: New module + modifications to collect.py and score.py
 
 ## Constitution Check
