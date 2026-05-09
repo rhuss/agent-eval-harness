@@ -16,6 +16,12 @@
 
 - Q: How should subagent events be structured? → A: Flat list with tags. All events (root + subagent) in one ordered list, subagent events tagged with `parent_tool_use_id` and `agent_id`. Judges filter to root-only with `if not e.get("parent_tool_use_id")`. Matches Claude Code's native streaming format (>= 2.1.108). Alternatives rejected: nesting (forces recursion for simple queries), separate lists by agent (loses ordering).
 
+### Session 2026-05-09
+
+- Q: How should structured events work in batch execution mode? → A: Batch mode produces no `events.json`. Structured events are only supported in case mode where each case has its own `stdout.log`. Splitting a single batch stream into per-case events would require heuristics that don't exist yet. Documented as a known limitation.
+- Q: Should tool input content be capped like tool result content? → A: Yes. String values in tool inputs are capped at the same `event_result_cap` threshold as tool results, with the same truncation metadata (`truncated: true`, `original_length: N`). Keeps events.json size bounded for skills with many large Write calls.
+- Q: What should `traces.events: false` produce in the case record? → A: Always `[]` (empty list, never a missing key). Judges can iterate `outputs["events"]` without checking for key existence.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Evaluate skill output through structured events (Priority: P1)
@@ -84,12 +90,13 @@ A judge author writes a check judge that evaluates how a skill delegates work to
 - What happens when `stdout.log` is empty or missing? `events.json` should contain an empty list, and `record["events"]` should be `[]`.
 - What happens when `stdout.log` contains non-JSONL content (non-Claude-Code runner)? Lines that fail JSON parsing are skipped. If no valid events are found, `events.json` contains an empty list.
 - What happens when a tool result exceeds the size cap? The content is truncated at the configured threshold with a `"[truncated]"` marker appended.
-- What happens when `traces.events` is set to `false`? No `events.json` is written, `record["events"]` is not populated. Judges that depend on events will receive an empty list or missing key.
+- What happens when `traces.events` is set to `false`? No `events.json` is written. `record["events"]` is set to `[]` (empty list, never a missing key). Judges can safely iterate without checking for key existence.
 - What happens when `stdout.log` contains subagent messages (with `parent_tool_use_id`)? They are included in the event list with `parent_tool_use_id` and `agent_id` tags. Judges filter to root-only with `if not e.get("parent_tool_use_id")`.
 - What happens when subagent transcript files exist but their events overlap with streamed stdout events? Events are deduplicated by message ID to prevent double-counting.
 - What happens when `events.json` is corrupted (partial write, invalid JSON)? `load_case_record()` sets `record["events"]` to `[]` and logs a warning. Judges receive an empty list rather than crashing.
 - What happens when tool result content contains non-UTF-8 bytes? The content is replaced with a `"(binary content, N bytes)"` placeholder. No crash, no encoding errors.
 - What is the difference between foreground and background subagents? Foreground subagents (Claude Code >= 2.1.108) are streamed in stdout with `parent_tool_use_id`. Background subagents only appear in `subagents/*.jsonl` transcript files. Both types get `parent_tool_use_id` and `agent_id` tags in the event list. The distinction is transparent to judges.
+- What happens in batch mode (`execution.mode: batch`)? No `events.json` is produced. Structured events require case mode where each case has its own `stdout.log`. Judges in batch mode do not receive `outputs["events"]` (empty list).
 
 ## Requirements *(mandatory)*
 
@@ -101,12 +108,12 @@ A judge author writes a check judge that evaluates how a skill delegates work to
 - **FR-004**: The system MUST NOT include `record["stdout"]` in the case record. Judges access execution data exclusively through `record["events"]`
 - **FR-005**: The system MUST provide a `{{ conversation }}` template variable for LLM judge prompts that renders assistant conversation text from the structured events
 - **FR-007**: Each structured event MUST include: event type, content (text or tool data), and timestamp when available
-- **FR-008**: Tool call events MUST include the tool name and input parameters
+- **FR-008**: Tool call events MUST include the tool name and input parameters. String values in tool inputs MUST be capped at `event_result_cap` with the same truncation metadata as tool results
 - **FR-009**: Tool result events MUST include the result content as valid UTF-8 text, capped at 50K characters by default (configurable via `traces.event_result_cap` in eval.yaml) with a `"[truncated]"` marker for oversized results. Non-UTF-8 content MUST be replaced with a `"(binary content, N bytes)"` placeholder. Truncated results MUST include `"truncated": true` and `"original_length": N` metadata fields
 - **FR-010**: Subagent events MUST be included in the flat event list with `parent_tool_use_id` and `agent_id` tags. The `{{ conversation }}` template variable MUST render only root-level assistant text (no `parent_tool_use_id`)
 - **FR-015**: The parser MUST merge subagent transcript files (`subagents/*.jsonl`) into the event list with proper `agent_id` tagging
 - **FR-016**: Events from subagent transcripts that were already streamed in stdout (Claude Code >= 2.1.108) MUST be deduplicated by message ID
-- **FR-011**: The `traces.events` configuration flag MUST control whether event parsing occurs at collection time
+- **FR-011**: The `traces.events` configuration flag MUST control whether event parsing occurs at collection time. In batch mode (`execution.mode: batch`), event parsing is skipped and no `events.json` is produced
 - **FR-012**: The `traces.stdout` configuration flag MUST continue to control whether raw `stdout.log` is retained on disk for human debugging
 - **FR-013**: The existing `_extract_tool_calls()` function MUST be replaced by a lookup over `record["events"]`
 - **FR-014**: The existing `_extract_assistant_text()` function MUST be replaced by a lookup over `record["events"]`

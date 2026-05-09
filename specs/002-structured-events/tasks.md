@@ -26,10 +26,12 @@
 **Purpose**: Create the shared event parser that all user stories depend on.
 
 - [X] T001 Create `agent_eval/events.py` with `parse_stream_events(stdout_text, result_cap=50000)` function that parses JSONL into structured event dicts per the data model schema (includes subagent events with `parent_tool_use_id` and `agent_id` tags)
+- [ ] T001a Cap string values in tool inputs at `event_result_cap` in `_parse_assistant_event()` in `agent_eval/events.py`, with same truncation metadata (`truncated: true`, `original_length: N`) as tool results (FR-008)
 - [X] T002 [P] Add `event_result_cap` field to `TracesConfig` in `agent_eval/config.py` (default: 50000) and update `traces.events` default to `true`
 - [X] T003 [P] Unit tests for `parse_stream_events()` in `tests/test_events.py`: valid JSONL with assistant text, tool calls, tool results, system/result events, timestamps, subagent events with tags
+- [ ] T003a [P] Unit test for tool input capping in `tests/test_events.py`: verify large string values in tool inputs are truncated at `event_result_cap` with `truncated` and `original_length` metadata
 
-**Checkpoint**: Shared parser exists, is tested, and can convert JSONL stdout into structured events including subagent events.
+**Checkpoint**: Shared parser exists, is tested, and can convert JSONL stdout into structured events including subagent events. Tool inputs capped at `event_result_cap`.
 
 ---
 
@@ -161,10 +163,10 @@
 
 - T002 and T003 can run in parallel (different files)
 - T004 and T005 can run in parallel (different test functions)
-- T010 and T011 can run in parallel (different test functions)
+- T001a and T003a can run in parallel (implementation + test)
 - T015, T016, T017 can all run in parallel (independent test functions)
-- T020-T024 can all run in parallel (independent edge case tests)
-- T026-T028 can all run in parallel (different documentation files)
+- T020-T027 can all run in parallel (independent edge case tests)
+- T029-T031 can all run in parallel (different documentation files)
 - US3 and US4 can overlap after US1 (independent user stories)
 
 ---
@@ -173,27 +175,27 @@
 
 ### MVP First (User Story 1 Only)
 
-1. Complete T001-T003: parser module + config + tests
+1. Complete T001-T003 (incl. T001a, T003a): parser module + config + input capping + tests
 2. Complete T004-T009: events loading + tool_calls migration
 3. **STOP and VALIDATE**: Run tests, verify `outputs["events"]` works
-4. Complete T010-T013: `{{ conversation }}` + `{{ stdout }}` deprecation
+4. Complete T010, T012: `{{ conversation }}` template variable
 5. Complete T014: process quality pattern validation
 
 ### Incremental Delivery
 
-1. T001-T003 (parser) -> T006-T009 (integration) -> US1 complete, testable
-2. T010-T013 (template variable) -> US2 complete
+1. T001-T003a (parser + input capping) -> T006-T009 (integration) -> US1 complete, testable
+2. T010, T012 (template variable) -> US2 complete
 3. T014 (process quality test) -> US3 verified
 4. T015-T019 (subagent events) -> US4 complete
-5. T020-T024 (edge cases) -> robustness verified
-6. T025-T029 (polish) -> feature complete
+5. T020-T027 (edge cases + benchmark) -> robustness verified
+6. T028-T031 (polish) -> feature complete
 
 ---
 
 ## Notes
 
-- Total tasks: 29
-- Foundational: 3 tasks
+- Total tasks: 31
+- Foundational: 5 tasks
 - US1: 6 tasks (core feature)
 - US2: 2 tasks (template variable)
 - US3: 1 task (verification only)
