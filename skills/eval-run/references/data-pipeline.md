@@ -145,7 +145,7 @@ Skills that modify input files using the Edit tool (rather than writing to an ou
     # Flat list of typed event dicts parsed from stdout.log JSONL.
     # Event types: assistant, tool_result, system, result.
     # Subagent events carry parent_tool_use_id and agent_id tags.
-    # Tool results include content (capped at traces.event_result_cap).
+    # Tool results include content (capped at 50K chars by default).
     "events": [
         {"type": "assistant", "text": "Let me check...", "tools": [...], "timestamp": "..."},
         {"type": "tool_result", "tool_use_id": "tu_001", "tool_name": "Read",
@@ -221,8 +221,7 @@ For each judge across all cases:
 |----------------|------------------|-----------------------|-------------------|
 | `stdout: true` | Keep raw stdout.log on disk | `stdout.log` in case/run dir | Debugging only (not loaded into record) |
 | `stderr: true` | Capture full stderr | `stderr.log` in case/run dir | `outputs["stderr"]` |
-| `events: true` | Parse JSONL into events.json | Parsed from stdout.log at collection time | `outputs["events"]` (list of event dicts) |
-| `event_result_cap: 50000` | Max chars per tool result/input | Applied during parsing | Truncated content has `truncated: true` and `original_length` |
+| `events: true` | Parse JSONL into events.json | Parsed from stdout.log at collection time | `outputs["events"]` (list of event dicts). Tool results/inputs capped at 50K chars |
 | `metrics: true` | Capture execution metadata | `run_result.json` | `outputs["exit_code"]`, `["duration_s"]`, `["cost_usd"]`, `["num_turns"]`, `["token_usage"]` |
 
 Note: `events.json` is generated at collection time by `collect.py` and includes merged subagent transcripts from `subagents/*.jsonl`. Tool calls in `outputs["tool_calls"]` are derived from events.

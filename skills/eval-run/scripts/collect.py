@@ -26,7 +26,9 @@ from pathlib import Path
 import yaml
 
 from agent_eval.config import EvalConfig
-from agent_eval.events import parse_stream_events, merge_subagent_transcripts
+from agent_eval.events import (
+    DEFAULT_RESULT_CAP, parse_stream_events, merge_subagent_transcripts,
+)
 
 # Files/dirs created by the harness infrastructure, not by the skill
 _HARNESS_PATHS = {
@@ -235,13 +237,12 @@ def _generate_events_json(case_dir, output_case_dir, config):
     except OSError:
         return
 
-    result_cap = config.traces.event_result_cap
-    events = parse_stream_events(stdout_text, result_cap=result_cap)
+    events = parse_stream_events(stdout_text)
 
     subagent_dir = case_dir / "subagents"
     if subagent_dir.is_dir():
         events = merge_subagent_transcripts(events, str(subagent_dir),
-                                            result_cap=result_cap)
+                                            result_cap=DEFAULT_RESULT_CAP)
 
     output_case_dir.mkdir(parents=True, exist_ok=True)
     dest = output_case_dir / "events.json"

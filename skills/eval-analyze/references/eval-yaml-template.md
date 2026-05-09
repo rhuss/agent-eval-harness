@@ -155,7 +155,6 @@ traces:
   stdout: true           # Keep raw stdout.log on disk (debugging)
   stderr: true           # Capture stderr.log
   events: true           # Parse JSONL into events.json (default: true)
-  event_result_cap: 50000  # Max chars per tool result/input string
   metrics: true          # Capture exit code, tokens, cost, duration
 
 # Judges — evaluate output quality

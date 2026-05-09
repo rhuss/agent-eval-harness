@@ -57,7 +57,6 @@ class TracesConfig:
     stdout: bool = True    # Capture stdout.log
     stderr: bool = True    # Capture stderr.log
     events: bool = True    # Parse JSONL into events.json
-    event_result_cap: int = 50000  # Max chars per tool result/input string
     metrics: bool = True   # Capture run_result.json metrics
 
 
@@ -341,7 +340,6 @@ class EvalConfig:
                 stdout=traces.get("stdout", True),
                 stderr=traces.get("stderr", True),
                 events=traces.get("events", True),
-                event_result_cap=traces.get("event_result_cap", 50000),
                 metrics=traces.get("metrics", True),
             )
 
