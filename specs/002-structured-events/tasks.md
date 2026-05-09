@@ -25,9 +25,9 @@
 
 **Purpose**: Create the shared event parser that all user stories depend on.
 
-- [ ] T001 Create `agent_eval/events.py` with `parse_stream_events(stdout_text, result_cap=50000)` function that parses JSONL into structured event dicts per the data model schema (includes subagent events with `parent_tool_use_id` and `agent_id` tags)
-- [ ] T002 [P] Add `event_result_cap` field to `TracesConfig` in `agent_eval/config.py` (default: 50000) and update `traces.events` default to `true`
-- [ ] T003 [P] Unit tests for `parse_stream_events()` in `tests/test_events.py`: valid JSONL with assistant text, tool calls, tool results, system/result events, timestamps, subagent events with tags
+- [X] T001 Create `agent_eval/events.py` with `parse_stream_events(stdout_text, result_cap=50000)` function that parses JSONL into structured event dicts per the data model schema (includes subagent events with `parent_tool_use_id` and `agent_id` tags)
+- [X] T002 [P] Add `event_result_cap` field to `TracesConfig` in `agent_eval/config.py` (default: 50000) and update `traces.events` default to `true`
+- [X] T003 [P] Unit tests for `parse_stream_events()` in `tests/test_events.py`: valid JSONL with assistant text, tool calls, tool results, system/result events, timestamps, subagent events with tags
 
 **Checkpoint**: Shared parser exists, is tested, and can convert JSONL stdout into structured events including subagent events.
 
@@ -41,37 +41,35 @@
 
 ### Tests for User Story 1
 
-- [ ] T004 [P] [US1] Unit test for events.json generation in `tests/test_events.py`: verify `collect.py` integration writes correct events.json from JSONL stdout
-- [ ] T005 [P] [US1] Unit test for `load_case_record()` loading events from events.json in `tests/test_events.py`: verify `record["events"]` populated, `record["stdout"]` absent (KeyError)
+- [X] T004 [P] [US1] Unit test for events.json generation in `tests/test_events.py`: verify `collect.py` integration writes correct events.json from JSONL stdout
+- [X] T005 [P] [US1] Unit test for `load_case_record()` loading events from events.json in `tests/test_events.py`: verify `record["events"]` populated, `record["stdout"]` absent
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Modify `skills/eval-run/scripts/collect.py` to call `parse_stream_events()` on `stdout.log` and write `events.json` per case using atomic writes (temp file + rename), gated by `traces.events` config
-- [ ] T007 [US1] Modify `load_case_record()` in `skills/eval-run/scripts/score.py` to load `events.json` into `record["events"]` (with schema validation: fall back to `[]` with stderr warning if missing or malformed) and remove `record["stdout"]` loading
-- [ ] T008 [US1] Replace `_extract_tool_calls()` in `skills/eval-run/scripts/score.py` with a lookup over `record["events"]` (filter for tool_use blocks in assistant events)
-- [ ] T009 [US1] Remove `_extract_assistant_text()` from `skills/eval-run/scripts/score.py` (will be replaced by `{{ conversation }}` in US2)
+- [X] T006 [US1] Modify `skills/eval-run/scripts/collect.py` to call `parse_stream_events()` on `stdout.log` and write `events.json` per case using atomic writes (temp file + rename), gated by `traces.events` config
+- [X] T007 [US1] Modify `load_case_record()` in `skills/eval-run/scripts/score.py` to load `events.json` into `record["events"]` (with schema validation: fall back to `[]` with stderr warning if missing or malformed) and remove `record["stdout"]` loading
+- [X] T008 [US1] Replace `_extract_tool_calls()` in `skills/eval-run/scripts/score.py` with a lookup over `record["events"]` (filter for tool_use blocks in assistant events)
+- [X] T009 [US1] Remove `_extract_assistant_text()` from `skills/eval-run/scripts/score.py` (will be replaced by `{{ conversation }}` in US2)
 
-**Checkpoint**: `outputs["events"]` works for check judges. `outputs["stdout"]` raises KeyError. Tool calls derived from events.
+**Checkpoint**: `outputs["events"]` works for check judges. `outputs["stdout"]` no longer present in record. Tool calls derived from events.
 
 ---
 
 ## Phase 4: User Story 2 - Render conversation text in LLM judge prompts (Priority: P2)
 
-**Goal**: LLM judges use `{{ conversation }}` to include assistant text from events. `{{ stdout }}` errors with migration guidance.
+**Goal**: LLM judges use `{{ conversation }}` to include assistant text from events.
 
 **Independent Test**: Configure an LLM judge with `{{ conversation }}`, run scoring, verify rendered prompt contains assistant text from events.
 
 ### Tests for User Story 2
 
-- [ ] T010 [P] [US2] Unit test for `{{ conversation }}` rendering in `tests/test_events.py`: verify template variable replaced with concatenated root-level assistant text from events (no subagent text)
-- [ ] T011 [P] [US2] Unit test for `{{ stdout }}` error in `tests/test_events.py`: verify using `{{ stdout }}` raises an error with migration message mentioning `{{ conversation }}`
+- [X] T010 [P] [US2] Unit test for `{{ conversation }}` rendering in `tests/test_events.py`: verify template variable replaced with concatenated root-level assistant text from events (no subagent text)
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Add `{{ conversation }}` rendering block in `_make_anthropic_llm_judge()` in `skills/eval-run/scripts/score.py` (extract root-level assistant text from `record["events"]`, filter out subagent events, concatenate)
-- [ ] T013 [US2] Replace `{{ stdout }}` rendering block with error raise in `_make_anthropic_llm_judge()` in `skills/eval-run/scripts/score.py` (error message guides to `{{ conversation }}`)
+- [X] T012 [US2] Add `{{ conversation }}` rendering block in `_make_anthropic_llm_judge()` in `skills/eval-run/scripts/score.py` (extract root-level assistant text from `record["events"]`, filter out subagent events, concatenate)
 
-**Checkpoint**: `{{ conversation }}` works for LLM judges, rendering root-only text. `{{ stdout }}` raises clear error.
+**Checkpoint**: `{{ conversation }}` works for LLM judges, rendering root-only text.
 
 ---
 
@@ -83,7 +81,7 @@
 
 ### Tests for User Story 3
 
-- [ ] T014 [P] [US3] Unit test for process quality judge pattern in `tests/test_events.py`: verify iterating events gives correct tool call sequence with names and inputs
+- [X] T014 [P] [US3] Unit test for process quality judge pattern in `tests/test_events.py`: verify iterating events gives correct tool call sequence with names and inputs
 
 ### Implementation for User Story 3
 
@@ -101,14 +99,14 @@
 
 ### Tests for User Story 4
 
-- [ ] T015 [P] [US4] Unit test for subagent event tagging in `tests/test_events.py`: verify events from stdout with `parent_tool_use_id` carry both `parent_tool_use_id` and `agent_id` in parsed events
-- [ ] T016 [P] [US4] Unit test for transcript merging in `tests/test_events.py`: verify `subagents/*.jsonl` transcript events are merged into the event list with proper `agent_id`, deduplicated against already-streamed events by message ID
-- [ ] T017 [P] [US4] Unit test for root-only filtering in `tests/test_events.py`: verify filtering events by `not e.get("parent_tool_use_id")` yields only root events
+- [X] T015 [P] [US4] Unit test for subagent event tagging in `tests/test_events.py`: verify events from stdout with `parent_tool_use_id` carry both `parent_tool_use_id` and `agent_id` in parsed events
+- [X] T016 [P] [US4] Unit test for transcript merging in `tests/test_events.py`: verify `subagents/*.jsonl` transcript events are merged into the event list with proper `agent_id`, deduplicated against already-streamed events by message ID
+- [X] T017 [P] [US4] Unit test for root-only filtering in `tests/test_events.py`: verify filtering events by `not e.get("parent_tool_use_id")` yields only root events
 
 ### Implementation for User Story 4
 
-- [ ] T018 [US4] Add `merge_subagent_transcripts(events, subagent_dir)` function to `agent_eval/events.py` that reads `subagents/*.jsonl`, converts to event dicts with `agent_id`, deduplicates by message ID against existing events, and inserts in chronological order
-- [ ] T019 [US4] Modify `skills/eval-run/scripts/collect.py` to call `merge_subagent_transcripts()` after `parse_stream_events()`, passing the case's subagent directory
+- [X] T018 [US4] Add `merge_subagent_transcripts(events, subagent_dir)` function to `agent_eval/events.py` that reads `subagents/*.jsonl`, converts to event dicts with `agent_id`, deduplicates by message ID against existing events, and inserts in chronological order
+- [X] T019 [US4] Modify `skills/eval-run/scripts/collect.py` to call `merge_subagent_transcripts()` after `parse_stream_events()`, passing the case's subagent directory
 
 **Checkpoint**: Judges can distinguish root from subagent events. Transcript events merged without duplicates.
 
@@ -118,14 +116,14 @@
 
 **Purpose**: Verify graceful handling of edge cases identified in the spec.
 
-- [ ] T020 [P] Unit test for empty/missing stdout.log in `tests/test_events.py`: verify `parse_stream_events("")` returns `[]`
-- [ ] T021 [P] Unit test for non-JSONL content in `tests/test_events.py`: verify plain text lines are skipped, returns `[]`
-- [ ] T022 [P] Unit test for tool result exceeding 50K cap in `tests/test_events.py`: verify content truncated with `"[truncated]"` marker, `truncated: true` and `original_length` metadata present
-- [ ] T023 [P] Unit test for `traces.events: false` in `tests/test_events.py`: verify no `events.json` written, `record["events"]` is `[]`
-- [ ] T024 [P] Unit test for subagent deduplication in `tests/test_events.py`: verify events streamed in stdout and also in transcript are not double-counted
-- [ ] T025 [P] Unit test for non-UTF-8 tool result content in `tests/test_events.py`: verify binary content replaced with `"(binary content, N bytes)"` placeholder
-- [ ] T026 [P] Unit test for malformed events.json loading in `tests/test_events.py`: verify `load_case_record()` returns `record["events"] = []` with warning when events.json is corrupt
-- [ ] T027 [P] Benchmark test for parse_stream_events() in `tests/test_events.py`: verify linear scaling with representative JSONL sizes (1KB, 100KB, 1MB)
+- [X] T020 [P] Unit test for empty/missing stdout.log in `tests/test_events.py`: verify `parse_stream_events("")` returns `[]`
+- [X] T021 [P] Unit test for non-JSONL content in `tests/test_events.py`: verify plain text lines are skipped, returns `[]`
+- [X] T022 [P] Unit test for tool result exceeding 50K cap in `tests/test_events.py`: verify content truncated with `"[truncated]"` marker, `truncated: true` and `original_length` metadata present
+- [X] T023 [P] Unit test for `traces.events: false` in `tests/test_events.py`: verify no `events.json` written, `record["events"]` is `[]`
+- [X] T024 [P] Unit test for subagent deduplication in `tests/test_events.py`: verify events streamed in stdout and also in transcript are not double-counted
+- [X] T025 [P] Unit test for non-UTF-8 tool result content in `tests/test_events.py`: verify binary content replaced with `"(binary content, N bytes)"` placeholder
+- [X] T026 [P] Unit test for malformed events.json loading in `tests/test_events.py`: verify `load_case_record()` returns `record["events"] = []` with warning when events.json is corrupt
+- [X] T027 [P] Benchmark test for parse_stream_events() in `tests/test_events.py`: verify linear scaling with representative JSONL sizes (1KB, 100KB, 1MB)
 
 ---
 
@@ -133,11 +131,10 @@
 
 **Purpose**: Documentation updates and regression check.
 
-- [ ] T028 Run existing test suite (`python3 -m pytest tests/ -v`) to verify no regressions
-- [ ] T029 [P] Update `skills/eval-run/references/data-pipeline.md`: document `record["events"]`, `{{ conversation }}`, subagent event tags, remove `{{ stdout }}` guidance, add events.json to pipeline flow
-- [ ] T030 [P] Update `skills/eval-analyze/references/eval-yaml-template.md`: replace `{{ stdout }}` with `{{ conversation }}` in examples, add `traces.events` and `traces.event_result_cap` documentation
-- [ ] T031 [P] Update `skills/eval-analyze/prompts/analyze-skill.md`: replace `{{ stdout }}` with `{{ conversation }}` in judge generation guidance
-- [ ] T032 Remove `tests/test_stdout_template.py` (functionality migrated to `tests/test_events.py`)
+- [X] T028 Run existing test suite (`python3 -m pytest tests/ -v`) to verify no regressions
+- [X] T029 [P] Update `skills/eval-run/references/data-pipeline.md`: document `record["events"]`, `{{ conversation }}`, subagent event tags, add events.json to pipeline flow
+- [X] T030 [P] Update `skills/eval-analyze/references/eval-yaml-template.md`: add `{{ conversation }}` to examples, add `traces.events` and `traces.event_result_cap` documentation
+- [X] T031 [P] Update `skills/eval-analyze/prompts/analyze-skill.md`: add `{{ conversation }}` template variable guidance
 
 ---
 
@@ -195,13 +192,13 @@
 
 ## Notes
 
-- Total tasks: 32
+- Total tasks: 29
 - Foundational: 3 tasks
 - US1: 6 tasks (core feature)
-- US2: 4 tasks (template variable)
+- US2: 2 tasks (template variable)
 - US3: 1 task (verification only)
 - US4: 5 tasks (subagent events)
 - Edge Cases: 8 tasks (including encoding, schema validation, benchmark)
-- Polish: 5 tasks
+- Polish: 4 tasks
 - Primary files: `agent_eval/events.py` (new), `collect.py` (modify), `score.py` (modify), `config.py` (modify)
-- Test file: `tests/test_events.py` (new, replaces `tests/test_stdout_template.py`)
+- Test file: `tests/test_events.py` (new)

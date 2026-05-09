@@ -7,7 +7,7 @@
 
 Add a shared JSONL parser (`agent_eval/events.py`) that converts Claude Code stream-json stdout into structured events at collection time. Events are stored as `events.json` per case and loaded into `record["events"]` for judges. The event list uses a flat-with-tags structure: root and subagent events in one ordered list, subagent events tagged with `parent_tool_use_id` and `agent_id`. Subagent transcript files are merged and deduplicated.
 
-This replaces `record["stdout"]` (removed, KeyError on access), consolidates `_extract_tool_calls()` and `_extract_assistant_text()` into event lookups, and introduces `{{ conversation }}` as the template variable for LLM judges (deprecating `{{ stdout }}` with an error).
+This removes `record["stdout"]`, consolidates `_extract_tool_calls()` and `_extract_assistant_text()` into event lookups, and introduces `{{ conversation }}` as the template variable for LLM judges.
 
 ## Technical Context
 
@@ -51,16 +51,16 @@ agent_eval/
 
 skills/eval-run/scripts/
 ├── collect.py                            # MODIFY: call parse_stream_events(), merge transcripts, write events.json
-└── score.py                              # MODIFY: load events, replace extractors, add {{ conversation }}, error on {{ stdout }}
+└── score.py                              # MODIFY: load events, replace extractors, add {{ conversation }}
 
 skills/eval-run/references/
-└── data-pipeline.md                      # MODIFY: document events, {{ conversation }}, remove {{ stdout }} guidance
+└── data-pipeline.md                      # MODIFY: document events, {{ conversation }}
 
 skills/eval-analyze/references/
-└── eval-yaml-template.md                 # MODIFY: replace {{ stdout }} with {{ conversation }} in examples
+└── eval-yaml-template.md                 # MODIFY: add {{ conversation }} to examples
 
 skills/eval-analyze/prompts/
-└── analyze-skill.md                      # MODIFY: update template variable guidance
+└── analyze-skill.md                      # MODIFY: add {{ conversation }} template variable guidance
 
 tests/
 └── test_events.py                        # NEW: unit tests for parser, transcript merging, template rendering

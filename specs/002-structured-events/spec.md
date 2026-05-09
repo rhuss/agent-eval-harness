@@ -9,9 +9,8 @@
 
 ### Session 2026-05-06
 
-- Q: What should the new template variable replacing `{{ stdout }}` be named? → A: `{{ conversation }}` (renders assistant text from events, distinct from the full `outputs["events"]` list)
+- Q: What should the new template variable be named? → A: `{{ conversation }}` (renders assistant text from events, distinct from the full `outputs["events"]` list)
 - Q: What is the default size cap for tool results in events? → A: 50K characters default, configurable via `traces.event_result_cap` in eval.yaml
-- Q: What happens when a check judge accesses `outputs["stdout"]`? → A: Raises KeyError immediately (hard break, forces migration)
 
 ### Session 2026-05-08
 
@@ -37,16 +36,15 @@ A judge author configures an LLM judge or check judge to evaluate a skill's outp
 
 ### User Story 2 - Render conversation text in LLM judge prompts (Priority: P2)
 
-A judge author uses `{{ conversation }}` in an LLM judge prompt to include the skill's conversation output. The template variable renders the assistant text from the structured events, replacing the deprecated `{{ stdout }}` approach.
+A judge author uses `{{ conversation }}` in an LLM judge prompt to include the skill's conversation output. The template variable renders the assistant text from the structured events.
 
-**Why this priority**: LLM judges need a template variable to include conversation text in their prompts. This replaces `{{ stdout }}` with an events-backed equivalent.
+**Why this priority**: LLM judges need a template variable to include conversation text in their prompts.
 
 **Independent Test**: Configure an LLM judge with the new template variable. Run scoring. Verify the rendered prompt contains the assistant conversation text and not raw JSONL.
 
 **Acceptance Scenarios**:
 
 1. **Given** an LLM judge prompt containing `{{ conversation }}`, **When** scoring runs, **Then** the variable is replaced with concatenated assistant text from the structured events
-2. **Given** a judge prompt containing `{{ stdout }}`, **When** scoring runs, **Then** the system raises an error with a message guiding the author to use `{{ conversation }}`
 
 ---
 
@@ -100,9 +98,8 @@ A judge author writes a check judge that evaluates how a skill delegates work to
 - **FR-001**: The system MUST provide a shared parsing function that converts JSONL stdout into a list of structured event objects
 - **FR-002**: The system MUST parse events at collection time and persist them as `events.json` per case in the run output directory using atomic writes (write to temp file, then rename)
 - **FR-003**: The scoring system MUST load `events.json` into `record["events"]` when building the case record. If `events.json` is missing or malformed, `record["events"]` MUST be set to `[]` and a warning logged to stderr
-- **FR-004**: The system MUST remove `record["stdout"]` from the case record. Accessing `outputs["stdout"]` in a judge MUST raise a KeyError. Judges access execution data exclusively through `record["events"]`
+- **FR-004**: The system MUST NOT include `record["stdout"]` in the case record. Judges access execution data exclusively through `record["events"]`
 - **FR-005**: The system MUST provide a `{{ conversation }}` template variable for LLM judge prompts that renders assistant conversation text from the structured events
-- **FR-006**: The `{{ stdout }}` template variable MUST raise an error with a migration message when used, guiding authors to use `{{ conversation }}`
 - **FR-007**: Each structured event MUST include: event type, content (text or tool data), and timestamp when available
 - **FR-008**: Tool call events MUST include the tool name and input parameters
 - **FR-009**: Tool result events MUST include the result content as valid UTF-8 text, capped at 50K characters by default (configurable via `traces.event_result_cap` in eval.yaml) with a `"[truncated]"` marker for oversized results. Non-UTF-8 content MUST be replaced with a `"(binary content, N bytes)"` placeholder. Truncated results MUST include `"truncated": true` and `"original_length": N` metadata fields
@@ -126,9 +123,8 @@ A judge author writes a check judge that evaluates how a skill delegates work to
 - **SC-001**: Judges can access structured events via `outputs["events"]` without writing any JSONL parsing code
 - **SC-002**: JSONL parsing occurs exactly once per case (at collection time), not at scoring time
 - **SC-003**: Existing check judges that used `outputs["tool_calls"]` continue to work (tool calls derived from events)
-- **SC-004**: LLM judges using `{{ conversation }}` receive assistant conversation text identical to what `{{ stdout }}` previously rendered
+- **SC-004**: LLM judges using `{{ conversation }}` receive assistant conversation text from the structured events
 - **SC-005**: Event parsing overhead scales linearly with stdout size, verified by benchmark test against representative JSONL sizes (1KB, 100KB, 1MB)
-- **SC-006**: Using `{{ stdout }}` in a judge prompt produces a clear error message with migration instructions
 
 ## Assumptions
 
