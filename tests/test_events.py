@@ -338,19 +338,21 @@ class TestEventsJsonGeneration:
             make_user(tool_results=[("tu_001", "content")]),
             make_result(cost_usd=0.10),
         ]
-        stdout_path = tmp_path / "case_dir" / "stdout.log"
-        stdout_path.parent.mkdir(parents=True)
-        stdout_path.write_text(_to_stdout(events))
+        # In case mode, execute.py writes stdout.log to the output dir,
+        # not the workspace case dir.
+        case_dir = tmp_path / "workspace" / "cases" / "case_dir"
+        case_dir.mkdir(parents=True)
 
         output_dir = tmp_path / "output" / "cases" / "case_dir"
         output_dir.mkdir(parents=True)
+        (output_dir / "stdout.log").write_text(_to_stdout(events))
 
         from collect import _generate_events_json
         from agent_eval.config import EvalConfig
 
         config = EvalConfig()
         config.traces.events = True
-        _generate_events_json(stdout_path.parent, output_dir, config)
+        _generate_events_json(case_dir, output_dir, config)
 
         events_json = output_dir / "events.json"
         assert events_json.exists()
@@ -360,6 +362,29 @@ class TestEventsJsonGeneration:
         assert "assistant" in types
         assert "tool_result" in types
         assert "result" in types
+
+    def test_events_json_fallback_to_workspace(self, tmp_path):
+        """stdout.log in workspace case_dir is used when not in output_dir."""
+        events = [make_assistant("msg_001", text="Fallback test")]
+        case_dir = tmp_path / "workspace" / "cases" / "case_dir"
+        case_dir.mkdir(parents=True)
+        (case_dir / "stdout.log").write_text(_to_stdout(events))
+
+        output_dir = tmp_path / "output" / "cases" / "case_dir"
+        output_dir.mkdir(parents=True)
+
+        from collect import _generate_events_json
+        from agent_eval.config import EvalConfig
+
+        config = EvalConfig()
+        config.traces.events = True
+        _generate_events_json(case_dir, output_dir, config)
+
+        events_json = output_dir / "events.json"
+        assert events_json.exists()
+        loaded = json.loads(events_json.read_text())
+        assert len(loaded) > 0
+        assert any(e.get("text") == "Fallback test" for e in loaded)
 
     def test_events_json_not_written_when_disabled(self, tmp_path):
         """T023: traces.events=false means no events.json and record["events"]=[]."""
