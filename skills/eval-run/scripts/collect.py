@@ -222,7 +222,11 @@ def _collect_per_case(workspace, output_dir, config):
 
 def _generate_events_json(case_dir, output_case_dir, config):
     """Parse stdout.log into events.json using atomic write."""
-    stdout_path = case_dir / "stdout.log"
+    # In case mode, execute.py writes stdout.log to the output directory,
+    # not the workspace. Check there first, fall back to workspace.
+    stdout_path = output_case_dir / "stdout.log"
+    if not stdout_path.exists():
+        stdout_path = case_dir / "stdout.log"
     if not stdout_path.exists():
         output_case_dir.mkdir(parents=True, exist_ok=True)
         dest = output_case_dir / "events.json"
