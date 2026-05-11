@@ -141,6 +141,11 @@ Skills that modify input files using the Edit tool (rather than writing to an ou
         "source.md": "<edited file content>",
     },
 
+    # --- Conversation text (convenience key for check judges) ---
+    # Pre-extracted root-level assistant text from events. Use this instead
+    # of manually parsing events for assistant text.
+    "conversation": "Let me check...\n\nHere are the results...",
+
     # --- Structured events (if traces.events enabled, default: true) ---
     # Flat list of typed event dicts parsed from stdout.log JSONL.
     # Event types: assistant, tool_result, system, result.

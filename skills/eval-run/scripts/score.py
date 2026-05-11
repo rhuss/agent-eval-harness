@@ -173,6 +173,13 @@ def load_case_record(case_dir, config, run_id=None, runs_dir=None):
     else:
         record["events"] = []
 
+    # --- Conversation text (convenience key for check judges) ---
+    if record["events"]:
+        from agent_eval.events import extract_conversation_text
+        record["conversation"] = extract_conversation_text(record["events"])
+    else:
+        record["conversation"] = ""
+
     # --- Logs (if traces config enables them) ---
     if run_id:
         if config.traces.stderr:
