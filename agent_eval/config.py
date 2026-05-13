@@ -54,10 +54,10 @@ class OutputConfig:
 @dataclass
 class TracesConfig:
     """What execution traces to capture and make available to judges."""
-    stdout: bool = True   # Capture stdout.log
-    stderr: bool = True   # Capture stderr.log
-    events: bool = False  # Capture full stream-json events
-    metrics: bool = True  # Capture run_result.json metrics
+    stdout: bool = True    # Capture stdout.log
+    stderr: bool = True    # Capture stderr.log
+    events: bool = True    # Parse JSONL into events.json
+    metrics: bool = True   # Capture run_result.json metrics
 
 
 @dataclass
@@ -339,7 +339,7 @@ class EvalConfig:
             config.traces = TracesConfig(
                 stdout=traces.get("stdout", True),
                 stderr=traces.get("stderr", True),
-                events=traces.get("events", False),
+                events=traces.get("events", True),
                 metrics=traces.get("metrics", True),
             )
 

@@ -152,10 +152,10 @@ outputs:
 
 # Traces — execution data to capture for judges
 traces:
-  stdout: true     # Capture stdout.log
-  stderr: true     # Capture stderr.log
-  events: false    # Execution events: tool calls, reasoning, results (verbose)
-  metrics: true    # Capture exit code, tokens, cost, duration
+  stdout: true           # Keep raw stdout.log on disk (debugging)
+  stderr: true           # Capture stderr.log
+  events: true           # Parse JSONL into events.json (default: true)
+  metrics: true          # Capture exit code, tokens, cost, duration
 
 # Judges — evaluate output quality
 judges:
@@ -167,13 +167,17 @@ judges:
       <python snippet — receives outputs dict, returns (bool, str)>
 
   # LLM judge: assess quality with a prompt
-  # IMPORTANT: include {{ outputs }} so the LLM can see the skill's output files
+  # Template variables:
+  #   {{ outputs }} — renders file artifacts and modified files as markdown
+  #   {{ conversation }} — renders root-level assistant text (excludes subagent text)
+  #   {{ annotations }} — renders dataset annotations
   - name: <descriptive_name>
     description: |
       <what this judge evaluates>
     prompt: |
       <preamble — what to evaluate>
       {{ outputs }}
+      {{ conversation }}
       <scoring criteria — define what each score level means>
     # Optional: supplementary context files
     # context:
@@ -258,13 +262,29 @@ The `[EXTERNAL]` marker tells `/eval-dataset` to generate `TODO_` placeholder va
 Keep check scripts short (under 15 lines). They receive an `outputs` dict — **always use this dict to access files, never use `os.listdir()` or filesystem paths** (judges run in the project root, not the per-case output directory).
 
 Key fields in `outputs`:
+- `outputs["conversation"]` — pre-extracted root-level assistant text (string). Use this for check judges that need to search the skill's conversation output. Equivalent to `{{ conversation }}` for LLM judges.
 - `outputs["files"]` — dict of `{relative_path: file_content}`, e.g. `{"artifacts/rfe-tasks/RFE-001.md": "# Summary\n..."}`
 - `outputs["modified_files"]` — dict of `{filename: content}` for files modified in-place during execution (e.g., `{"source.md": "edited content..."}`)
+- `outputs["events"]` — structured event list (for advanced judges that need tool calls, timestamps, or subagent separation)
 - `outputs["case_dir"]` — absolute path to the per-case output directory
 - `outputs["exit_code"]`, `outputs["duration_s"]`, `outputs["cost_usd"]`, `outputs["num_turns"]` — execution metadata
 - `outputs["tool_calls"]` — list of captured tool calls
-- `outputs["stdout"]`, `outputs["stderr"]` — captured logs
+- `outputs["stderr"]` — captured stderr log
 - `outputs["annotations"]` — parsed `annotations.yaml` from the dataset case directory (always present, empty dict if no file)
+
+Example check judge — search conversation text for expected patterns:
+```yaml
+  - name: score_present
+    check: |
+      import re
+      text = outputs.get("conversation", "")
+      if not text:
+          return (False, "No conversation output")
+      match = re.search(r'Score[:\s]*(\d+)/15', text)
+      if not match:
+          return (False, "No score found in output")
+      return (True, f"Score: {match.group(1)}/15")
+```
 
 Example check judge — find files by path prefix and read their content:
 ```yaml
