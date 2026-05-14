@@ -4,8 +4,8 @@ import json
 import os
 import re
 import shlex
-import signal
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -138,20 +138,25 @@ class CliRunner(EvalRunner):
         start = time.monotonic()
 
         try:
-            proc = subprocess.Popen(
-                cmd,
+            popen_kwargs = dict(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=str(workspace),
                 env=env,
-                start_new_session=True,
             )
+            if sys.platform != "win32":
+                popen_kwargs["start_new_session"] = True
+            proc = subprocess.Popen(cmd, **popen_kwargs)
             try:
                 stdout, stderr = proc.communicate(timeout=timeout_s)
             except subprocess.TimeoutExpired:
                 # Kill the entire process group so child processes don't linger
-                os.killpg(proc.pid, signal.SIGKILL)
+                if sys.platform != "win32":
+                    import signal
+                    os.killpg(proc.pid, signal.SIGKILL)
+                else:
+                    proc.kill()
                 try:
                     stdout, stderr = proc.communicate(timeout=5)
                 except subprocess.TimeoutExpired:
@@ -257,5 +262,8 @@ class CliRunner(EvalRunner):
             if not isinstance(data, dict):
                 return {}
             return data
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError) as exc:
+            with _print_lock:
+                print(f"  WARNING: failed to parse {metrics_path}: {exc}",
+                      flush=True)
             return {}

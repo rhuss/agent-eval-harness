@@ -127,9 +127,16 @@ Judges get an `outputs` dict with these keys (all populated from the above sourc
 
 | Behavior | Opaque CLI runner | Claude Code runner |
 |---|---|---|
-| Inherits caller's env | Full `os.environ` (command is user-provided and trusted) | Filtered to safe allowlist |
+| Inherits caller's env | Full `os.environ` (see security note below) | Filtered to safe allowlist |
 | `execution.env` vars | Injected via `_build_env()` with `$VAR` resolution | Injected into `.claude/settings.json` env block |
 | `runner.env_strip` | Strips named keys from subprocess env | Strips named keys from subprocess env |
+
+**Security note on environment inheritance:** The opaque CLI runner inherits the
+full caller environment because commands are provided by the eval author (not
+untrusted input). Use `runner.env_strip` to remove sensitive keys (e.g.,
+`ANTHROPIC_API_KEY`) when the external command doesn't need them. The Claude Code
+runner uses a strict allowlist because it executes arbitrary agent-generated tool
+calls.
 
 ## Features that don't work with the opaque CLI runner
 
