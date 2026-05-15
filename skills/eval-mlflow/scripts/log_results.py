@@ -24,6 +24,7 @@ import yaml
 try:
     import mlflow
     from mlflow import MlflowClient
+    from mlflow.entities.assessment_source import AssessmentSource, AssessmentSourceType
 except ImportError:
     print("MLflow not installed. Install with: pip install 'mlflow[genai]'",
           file=sys.stderr)
@@ -207,6 +208,7 @@ def main():
     case_trace_map = {}  # case_id -> trace_id
     trace_ids = []
 
+    # TODO: paginate via page_token for experiments with >500 unlinked traces
     try:
         all_traces = client.search_traces(experiment_ids=[experiment_id],
                                           max_results=500)
@@ -283,7 +285,6 @@ def main():
 
     # ── Attach judge feedback to traces (populates Quality tab) ──
     feedback_count = 0
-    from mlflow.entities.assessment_source import AssessmentSource, AssessmentSourceType
 
     _TRUE_STRS = {"pass", "true", "yes", "y", "1", "ok", "success"}
     _FALSE_STRS = {"fail", "false", "no", "n", "0", "error", "failure"}
