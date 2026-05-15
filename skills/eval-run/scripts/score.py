@@ -123,6 +123,7 @@ def load_case_record(case_dir, config, run_id=None, runs_dir=None):
                 break
 
     # --- Modified files (in-place edits collected by collect.py) ---
+    _SKIP_MODIFIED_PREFIXES = {".work", "subagents", "hooks"}
     modified_dir = case_dir / "_modified"
     if modified_dir.exists():
         modified = {}
@@ -131,6 +132,8 @@ def load_case_record(case_dir, config, run_id=None, runs_dir=None):
                 continue
             _resolve_under(case_dir, f)
             rel = str(f.relative_to(modified_dir))
+            if any(rel.startswith(pfx) for pfx in _SKIP_MODIFIED_PREFIXES):
+                continue
             try:
                 content = f.read_text()
                 record["files"][f"_modified/{rel}"] = content

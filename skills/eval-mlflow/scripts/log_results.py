@@ -198,12 +198,34 @@ def main():
                     columns[key] = [row[key] for row in table_rows]
                 mlflow.log_table(columns, artifact_file="per_case_results.json")
 
-    # ── Traces from stdout.log ─────────────────────────────────
+    # ── Find existing execution traces ────────────────────────────
+    # Execution traces are created during skill execution by the trace
+    # interceptor. They have eval_run_id tags matching the case IDs.
+    # We prefer these over synthetic traces built from stdout.log
+    # because they already exist in the DB (no async queue issues).
     main_trace_id = None
-    exec_mode = run_result.get("execution_mode", "batch")
+    case_trace_map = {}  # case_id -> trace_id
+    trace_ids = []
 
+    try:
+        all_traces = client.search_traces(experiment_ids=[experiment_id],
+                                          max_results=500)
+        for t in all_traces:
+            tags = t.info.tags or {}
+            eval_id = tags.get("eval_run_id", "")
+            existing_run = tags.get("mlflow.runId")
+            # Match unlinked traces whose eval_run_id matches a case ID
+            if eval_id and not existing_run:
+                if eval_id not in case_trace_map:
+                    case_trace_map[eval_id] = t.info.trace_id
+                trace_ids.append(t.info.trace_id)
+    except Exception as e:
+        print(f"WARNING: failed to search traces: {e}", file=sys.stderr)
+
+    # Build synthetic traces from stdout.log for cases not already covered
+    # by existing execution traces.
+    exec_mode = run_result.get("execution_mode", "batch")
     if exec_mode == "case":
-        # Per-case mode: each case has its own stdout.log
         cases_dir = run_dir / "cases"
         if cases_dir.exists():
             for case_dir in sorted(d for d in cases_dir.iterdir() if d.is_dir()):
@@ -211,6 +233,8 @@ def main():
                 if not case_stdout.exists():
                     continue
                 case_id = case_dir.name
+                if case_id in case_trace_map:
+                    continue
                 case_result = run_result.get("per_case", {}).get(case_id, run_result)
                 trace_name = f"{config.skill} ({case_id})" if config.skill else case_id
                 trace_dict = build_trace(case_stdout, case_result, case_id,
@@ -218,12 +242,11 @@ def main():
                 if trace_dict:
                     tid = log_trace(trace_dict)
                     if tid:
-                        if not main_trace_id:
-                            main_trace_id = tid
+                        case_trace_map[case_id] = tid
+                        trace_ids.append(tid)
                         num_spans = len(trace_dict["data"]["spans"])
                         print(f"TRACE: {tid} ({num_spans} spans) — {case_id}")
     else:
-        # Batch mode: one stdout.log for the entire run
         stdout_path = run_dir / "stdout.log"
         if stdout_path.exists() and run_result:
             trace_name = f"{config.skill} ({args.run_id})" if config.skill else ""
@@ -232,33 +255,68 @@ def main():
             if trace_dict:
                 main_trace_id = log_trace(trace_dict)
                 if main_trace_id:
+                    trace_ids.append(main_trace_id)
                     num_spans = len(trace_dict["data"]["spans"])
                     duration_s = run_result.get("duration_s", 0)
                     print(f"TRACE: {main_trace_id} ({num_spans} spans, {duration_s:.0f}s)")
 
-    # ── Link traces to run ───────────────────────────────────────
-    trace_ids = []
-    if main_trace_id:
-        trace_ids.append(main_trace_id)
+    # Flush async queue after building synthetic traces
     try:
-        all_traces = client.search_traces(experiment_ids=[experiment_id],
-                                          max_results=500)
-        for t in all_traces:
-            tags = t.info.tags or {}
-            if tags.get("eval_run_id") == args.run_id:
-                if t.info.trace_id not in trace_ids:
-                    trace_ids.append(t.info.trace_id)
+        from mlflow.tracing.export.async_export_queue import AsyncExportQueue
+        AsyncExportQueue.get_instance().flush(timeout_sec=30)
+    except Exception:
+        pass
+    import time; time.sleep(3)
+
+    if not main_trace_id and case_trace_map:
+        main_trace_id = next(iter(case_trace_map.values()))
+
+    # ── Link traces to run (must happen before feedback) ─────────
+    try:
         if trace_ids:
             client.link_traces_to_run(run_id=mlflow_run_id, trace_ids=trace_ids)
+            for tid in trace_ids:
+                client.set_trace_tag(tid, "mlflow.runId", mlflow_run_id)
             print(f"LINKED: {len(trace_ids)} traces to run {mlflow_run_id}")
     except Exception as e:
         print(f"WARNING: failed to link traces: {e}", file=sys.stderr)
+
+    # ── Attach judge feedback to traces (populates Quality tab) ──
+    feedback_count = 0
+    from mlflow.entities.assessment_source import AssessmentSource, AssessmentSourceType
+    for case_id, case_results in per_case.items():
+        trace_id = case_trace_map.get(case_id, main_trace_id)
+        if not trace_id or not isinstance(case_results, dict):
+            continue
+        for judge_name, result in case_results.items():
+            if not isinstance(result, dict):
+                continue
+            value = result.get("value")
+            if value is None:
+                continue
+            try:
+                mlflow.log_feedback(
+                    trace_id=trace_id,
+                    name=f"{judge_name}",
+                    value=value if isinstance(value, (int, float)) else (1.0 if value else 0.0),
+                    rationale=str(result.get("rationale", ""))[:500],
+                    source=AssessmentSource(
+                        source_type=AssessmentSourceType.CODE,
+                        source_id=f"eval/{judge_name}",
+                    ),
+                )
+                feedback_count += 1
+            except Exception as e:
+                print(f"WARNING: failed to log feedback for {case_id}/{judge_name}: {e}",
+                      file=sys.stderr)
 
     print(f"EXPERIMENT: {experiment_name}")
     print(f"RUN: {mlflow_run_id}")
     print(f"PARAMS: {len(params)}")
     print(f"METRICS: {metric_count}")
     print(f"TABLE: per_case_results ({len(per_case)} cases)")
+    if feedback_count:
+        print(f"FEEDBACK: {feedback_count} assessments attached to traces")
 
 
 if __name__ == "__main__":

@@ -32,7 +32,8 @@ from agent_eval.events import (
 
 # Files/dirs created by the harness infrastructure, not by the skill
 _HARNESS_PATHS = {
-    ".claude", ".git", "stdout.log", "stderr.log",
+    ".claude", ".git", ".work", "subagents",
+    "stdout.log", "stderr.log",
     "run_result.json", "batch.yaml", "case_order.yaml",
 }
 
