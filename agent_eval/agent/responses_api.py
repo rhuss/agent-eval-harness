@@ -161,7 +161,9 @@ class ResponsesAPIRunner(EvalRunner):
                 self._log(f"Skipping unsafe container path: {f.path}")
                 continue
             local_path = (workspace_root / rel).resolve()
-            if not str(local_path).startswith(str(workspace_root)):
+            try:
+                local_path.relative_to(workspace_root)
+            except ValueError:
                 self._log(f"Skipping escaped container path: {f.path}")
                 continue
             local_path.parent.mkdir(parents=True, exist_ok=True)

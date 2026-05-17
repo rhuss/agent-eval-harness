@@ -508,6 +508,29 @@ class TestContainerLifecycle:
             assert not (ws / "tmp").exists(), "Non-workspace files must be skipped"
             assert mock_client.containers.files.content.retrieve.call_count == 2
 
+    def test_download_rejects_symlink_escape(self):
+        """Symlink inside workspace pointing outside must not be followed."""
+        from agent_eval.agent.responses_api import ResponsesAPIRunner
+        runner = ResponsesAPIRunner(base_url="http://localhost:8000")
+        mock_client = MagicMock()
+
+        escaped = MagicMock(path="/workspace/link/pwn.txt", id="f-esc")
+        mock_client.containers.files.list.return_value = [escaped]
+        mock_client.containers.files.content.retrieve.return_value = (
+            MagicMock(content=b"should-not-write"))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            ws = root / "ws"
+            ws.mkdir()
+            outside = root / "ws_evil"
+            outside.mkdir()
+            (ws / "link").symlink_to(outside, target_is_directory=True)
+
+            runner._download_results(mock_client, "ctr-1", ws)
+
+            assert not (outside / "pwn.txt").exists()
+
     def test_download_overwrites_local_content(self):
         """The agent may edit input.yaml in-place; the local copy must update."""
         from agent_eval.agent.responses_api import ResponsesAPIRunner
