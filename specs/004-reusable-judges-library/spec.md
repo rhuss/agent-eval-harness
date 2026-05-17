@@ -96,6 +96,7 @@ When evaluation results are reported, library judges are visually distinguishabl
 - **FR-008**: The score report MUST label built-in judges distinctly from custom judges so users can differentiate guardrail failures from skill-specific quality issues.
 - **FR-009**: The harness MUST reject duplicate judge names within a single eval.yaml (whether built-in, custom, or mixed).
 - **FR-010**: Each judge module MUST define a `__version__` string (e.g., `"1.0"`) for documentation purposes. No runtime pinning mechanism is provided; version changes are communicated via changelog.
+- **FR-011**: The `condition` field in judge configurations MUST be evaluated with restricted builtins (no access to `import`, `open`, `exec`, or other dangerous built-in functions). This is an existing security constraint on all judge types. eval.yaml is a repository-controlled, trusted configuration file and MUST NOT be accepted from untrusted sources.
 
 ### Key Entities
 

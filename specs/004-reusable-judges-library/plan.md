@@ -93,7 +93,7 @@ tests/
    - Instantiate `BuiltinJudgeRegistry`, call `discover()`, call `get(name)`
    - Wrap callable to pass `config` from `JudgeConfig.config`
 3. **Add duplicate name validation** at start of `load_judges()`
-4. **Update `_load_code_judge`** to also pass `config` if present (backward-compatible since existing code judges don't use it)
+4. **Keep `_load_code_judge` unchanged** for backward compatibility. Existing custom judges only accept `(outputs)` and would break if `config` were passed. The `config` parameter is only injected for `type: builtin` judges in the new routing branch.
 
 ### Phase 3: Implement Three Initial Judges
 
