@@ -16,7 +16,7 @@ from typing import Optional
 from .base import EvalRunner, RunResult
 
 _print_lock = threading.Lock()
-_global_skill_cache: dict[str, str] = {}
+_global_skill_cache: dict[tuple[str, str], str] = {}
 _global_skill_lock = threading.Lock()
 
 
@@ -85,8 +85,9 @@ class ResponsesAPIRunner(EvalRunner):
         uploads when multiple threads see a cache miss simultaneously.
         """
         with _global_skill_lock:
-            if skill_name in _global_skill_cache:
-                return _global_skill_cache[skill_name]
+            cache_key = (skill_name, str(skill_dir.resolve()))
+            if cache_key in _global_skill_cache:
+                return _global_skill_cache[cache_key]
             files = []
             for f in skill_dir.rglob("*"):
                 if not f.is_file() or f.is_symlink():
@@ -94,7 +95,7 @@ class ResponsesAPIRunner(EvalRunner):
                 rel = str(f.relative_to(skill_dir))
                 files.append((rel, f.read_bytes()))
             skill = client.skills.create(files=files)
-            _global_skill_cache[skill_name] = skill.id
+            _global_skill_cache[cache_key] = skill.id
             return skill.id
 
     _MEMORY_TIERS = [
@@ -151,11 +152,18 @@ class ResponsesAPIRunner(EvalRunner):
         may have been edited in-place by the agent).
         """
         after_files = client.containers.files.list(container_id)
+        workspace_root = workspace.resolve()
         for f in after_files:
             if not f.path.startswith("/workspace/"):
                 continue
-            rel = f.path[len("/workspace/"):]
-            local_path = workspace / rel
+            rel = Path(f.path[len("/workspace/"):])
+            if rel.is_absolute() or ".." in rel.parts:
+                self._log(f"Skipping unsafe container path: {f.path}")
+                continue
+            local_path = (workspace_root / rel).resolve()
+            if not str(local_path).startswith(str(workspace_root)):
+                self._log(f"Skipping escaped container path: {f.path}")
+                continue
             local_path.parent.mkdir(parents=True, exist_ok=True)
             resp = client.containers.files.content.retrieve(
                 file_id=f.id, container_id=container_id,
@@ -281,8 +289,10 @@ class ResponsesAPIRunner(EvalRunner):
             cost_usd = None
             if response.usage:
                 token_usage = {
-                    "input": response.usage.prompt_tokens,
-                    "output": response.usage.completion_tokens,
+                    "input": getattr(response.usage, "input_tokens", None)
+                            or getattr(response.usage, "prompt_tokens", None),
+                    "output": getattr(response.usage, "output_tokens", None)
+                             or getattr(response.usage, "completion_tokens", None),
                 }
 
             duration = time.monotonic() - start

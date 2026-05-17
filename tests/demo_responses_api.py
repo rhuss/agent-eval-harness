@@ -454,9 +454,9 @@ def main():
             (workspace / "output").mkdir(exist_ok=True)
 
             _step(1, "Calling runner.run_skill()")
-            print(f"    skill_name = 'eval-demo'")
+            print("    skill_name = 'eval-demo'")
             print(f"    args       = '{case['skill_args']}'")
-            print(f"    model      = 'mock-gpt-4o'")
+            print("    model      = 'mock-gpt-4o'")
             print(f"    workspace  = {workspace}")
             print()
 
@@ -481,12 +481,12 @@ def main():
             if result.stderr:
                 print(f"    stderr         = {result.stderr}")
 
-            print(f"\n    stdout (model response):")
+            print("\n    stdout (model response):")
             for line in result.stdout.splitlines():
                 print(f"      | {line}")
 
             # Show workspace contents after execution
-            print(f"\n    Workspace files after execution:")
+            print("\n    Workspace files after execution:")
             for f in sorted(workspace.rglob("*")):
                 if f.is_file() and not f.is_symlink():
                     rel = f.relative_to(workspace)

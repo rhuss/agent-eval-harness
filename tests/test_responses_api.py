@@ -578,6 +578,8 @@ class TestRunSkill:
         output_msg.content = [MagicMock(type="output_text", text=text)]
         resp.output = [output_msg]
         resp.usage = MagicMock()
+        resp.usage.input_tokens = prompt_tokens
+        resp.usage.output_tokens = completion_tokens
         resp.usage.prompt_tokens = prompt_tokens
         resp.usage.completion_tokens = completion_tokens
         return resp
@@ -745,14 +747,13 @@ class TestEdgeCases:
         """Must fail fast before any API calls."""
         from agent_eval.agent.responses_api import ResponsesAPIRunner
         runner = ResponsesAPIRunner(base_url="http://localhost:8000")
-        mock_client = MagicMock()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ws = Path(tmpdir)
-            with pytest.raises(ValueError, match="No model specified"):
-                runner.run_skill("test-skill", "", ws, "")
-
-        mock_client.skills.create.assert_not_called()
+            with patch.object(runner, "_get_client") as get_client:
+                with pytest.raises(ValueError, match="No model specified"):
+                    runner.run_skill("test-skill", "", ws, "")
+            get_client.assert_not_called()
 
     def test_skill_not_found_raises(self):
         from agent_eval.agent.responses_api import ResponsesAPIRunner
@@ -845,6 +846,8 @@ class TestEdgeCases:
 
 @pytest.fixture(scope="module")
 def mock_server():
+    from agent_eval.agent import responses_api
+    responses_api._global_skill_cache.clear()
     server, port = _start_mock_server()
     yield port
     server.shutdown()
