@@ -75,7 +75,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T013 [US3] Verify vendoring works with existing `_load_code_judge` in `skills/eval-run/scripts/score.py`. A copied judge file referenced via `module`/`function` should work without any code changes since judges use the standard function signature. Write a test in `tests/test_score_builtin.py` that imports a judge module directly and calls its `judge` function with custom config to confirm the vendoring pattern works.
+- [ ] T013 [US3] Verify vendoring works with existing `_load_code_judge` in `skills/eval-run/scripts/score.py`. A copied judge file referenced via `module`/`function` should work without any code changes since judges use the standard function signature. Write a test in `tests/test_score_builtin.py` that exercises `load_judges()` (or `_load_code_judge`) with a `JudgeConfig` using `module`/`function` pointing to a vendored judge copy, then invokes the returned scorer to confirm end-to-end vendoring behavior through the actual loader path.
 
 **Checkpoint**: User Story 3 complete. Vendoring is a documentation pattern, not a code feature. The existing `module`/`function` judge type already handles it.
 

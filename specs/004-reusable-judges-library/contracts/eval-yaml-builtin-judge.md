@@ -12,6 +12,8 @@ judges:
       <key>: <value>
 ```
 
+**Trust boundary**: `eval.yaml` is a repository-controlled, trusted configuration file. The `condition` field is evaluated using Python `eval()` with restricted builtins (no access to `import`, `open`, `exec`, or other dangerous functions). This is an existing behavior shared with all judge types. Do not accept eval.yaml from untrusted sources.
+
 ## Examples
 
 ### Minimal (no config)

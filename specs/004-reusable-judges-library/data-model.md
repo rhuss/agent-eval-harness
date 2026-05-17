@@ -22,7 +22,7 @@ Existing dataclass in `agent_eval/config.py`. New fields marked with `[NEW]`.
 | module | str | "" | External code judge module path |
 | function | str | "" | External code judge function name |
 | **type** | str | "" | **[NEW]** Judge type discriminator. Values: "", "builtin". Empty string preserves current inference behavior. |
-| **config** | dict | {} | **[NEW]** Arbitrary config dict passed to judge function as second argument. |
+| **config** | dict | `field(default_factory=dict)` | **[NEW]** Arbitrary config dict passed to judge function as second argument. Uses factory default to avoid shared mutable state. |
 
 **Type determination logic** (updated):
 1. If `type == "builtin"`: resolve via builtin registry using `name`
