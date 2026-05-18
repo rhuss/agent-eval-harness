@@ -54,6 +54,26 @@ class ResponsesAPIRunner(EvalRunner):
         self._memory_limit_mb = memory_limit_mb
         self._log_prefix = log_prefix
 
+    @classmethod
+    def from_config(cls, config, *, log_prefix=None, **overrides):
+        """Construct from EvalConfig.
+
+        Runner-specific settings (``base_url``, ``api_key``,
+        ``default_model``, ``network_policy``, ``memory_limit_mb``)
+        are read from ``runner.settings`` in eval.yaml and can be
+        overridden by keyword arguments.
+        """
+        settings = dict(config.runner.settings or {})
+        settings.update(overrides)
+        return cls(
+            base_url=settings.get("base_url"),
+            api_key=settings.get("api_key"),
+            default_model=settings.get("default_model"),
+            network_policy=settings.get("network_policy"),
+            memory_limit_mb=settings.get("memory_limit_mb", 512),
+            log_prefix=log_prefix,
+        )
+
     @property
     def name(self) -> str:
         return "responses-api"
@@ -83,17 +103,26 @@ class ResponsesAPIRunner(EvalRunner):
         own ``ResponsesAPIRunner`` instance) share a single upload.
         The lock is held across the check-and-create to prevent redundant
         uploads when multiple threads see a cache miss simultaneously.
+
+        Symlinks are resolved and included when the target stays under the
+        skill root (typical for symlinked skill trees from the harness).
         """
         with _global_skill_lock:
-            cache_key = (skill_name, str(skill_dir.resolve()))
+            skill_root = skill_dir.resolve()
+            cache_key = (skill_name, str(skill_root))
             if cache_key in _global_skill_cache:
                 return _global_skill_cache[cache_key]
             files = []
-            for f in skill_dir.rglob("*"):
-                if not f.is_file() or f.is_symlink():
+            for f in skill_root.rglob("*"):
+                try:
+                    resolved = f.resolve()
+                    resolved.relative_to(skill_root)
+                except (ValueError, OSError):
                     continue
-                rel = str(f.relative_to(skill_dir))
-                files.append((rel, f.read_bytes()))
+                if not resolved.is_file():
+                    continue
+                rel = f.relative_to(skill_root).as_posix()
+                files.append((rel, resolved.read_bytes()))
             skill = client.skills.create(files=files)
             _global_skill_cache[cache_key] = skill.id
             return skill.id
@@ -125,17 +154,23 @@ class ResponsesAPIRunner(EvalRunner):
                           workspace: Path) -> set[str]:
         """Upload all workspace files to the container. Returns set of paths.
 
-        Symlinks are skipped to prevent reading outside the workspace
-        (CWE-59). The container path is encoded in the filename tuple
-        so the API places files at the correct location.
+        Symlinked project files are common (e.g. symlinked skills under
+        ``skills/``). Each path is resolved and must stay under the
+        resolved workspace root (CWE-59); targets outside are skipped.
         """
         uploaded = set()
-        for f in workspace.rglob("*"):
-            if not f.is_file() or f.is_symlink():
+        workspace_root = workspace.resolve()
+        for f in workspace_root.rglob("*"):
+            try:
+                resolved = f.resolve()
+                resolved.relative_to(workspace_root)
+            except (ValueError, OSError):
                 continue
-            rel = f.relative_to(workspace)
-            container_path = f"/workspace/{rel}"
-            content = f.read_bytes()
+            if not resolved.is_file():
+                continue
+            rel = f.relative_to(workspace_root)
+            container_path = f"/workspace/{rel.as_posix()}"
+            content = resolved.read_bytes()
             client.containers.files.create(
                 container_id,
                 file=(container_path, content),
@@ -189,7 +224,7 @@ class ResponsesAPIRunner(EvalRunner):
         ]
         for c in candidates:
             if c.exists() and (c / "SKILL.md").exists():
-                return c
+                return c.resolve()
         raise FileNotFoundError(
             f"Skill directory not found for '{skill_name}'. "
             f"Searched: {[str(c) for c in candidates]}")

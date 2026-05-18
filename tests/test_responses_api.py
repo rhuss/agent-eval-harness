@@ -192,6 +192,43 @@ class TestRunnersRegistry:
         assert RUNNERS["responses-api"] is ResponsesAPIRunner
 
 
+class TestFromConfig:
+    def test_from_config_reads_settings(self):
+        from unittest.mock import MagicMock
+        from agent_eval.agent.responses_api import ResponsesAPIRunner
+        config = MagicMock()
+        config.runner.settings = {
+            "base_url": "http://ogx:8080/v1",
+            "api_key": "sk-test",
+            "default_model": "llama-3",
+            "memory_limit_mb": 2048,
+        }
+        runner = ResponsesAPIRunner.from_config(config, log_prefix="test")
+        assert runner._base_url == "http://ogx:8080/v1"
+        assert runner._api_key == "sk-test"
+        assert runner._default_model == "llama-3"
+        assert runner._memory_limit_mb == 2048
+        assert runner._log_prefix == "test"
+
+    def test_from_config_overrides_take_precedence(self):
+        from unittest.mock import MagicMock
+        from agent_eval.agent.responses_api import ResponsesAPIRunner
+        config = MagicMock()
+        config.runner.settings = {"default_model": "llama-3"}
+        runner = ResponsesAPIRunner.from_config(
+            config, default_model="gpt-4o")
+        assert runner._default_model == "gpt-4o"
+
+    def test_from_config_empty_settings(self):
+        from unittest.mock import MagicMock
+        from agent_eval.agent.responses_api import ResponsesAPIRunner
+        config = MagicMock()
+        config.runner.settings = {}
+        runner = ResponsesAPIRunner.from_config(config)
+        assert runner._memory_limit_mb == 512
+        assert runner._network_policy is None
+
+
 class TestABCCompliance:
     def test_is_eval_runner_subclass(self):
         from agent_eval.agent.base import EvalRunner
@@ -368,6 +405,29 @@ class TestSkillUpload:
             assert upload_count == 1, (
                 f"Expected 1 API call, got {upload_count} — TOCTOU race")
 
+    def test_upload_follows_internal_symlink_files(self):
+        """Symlinked files inside the skill bundle must upload (harness symlinks)."""
+        from agent_eval.agent.responses_api import ResponsesAPIRunner
+        runner = ResponsesAPIRunner(base_url="http://localhost:8000")
+        mock_client = MagicMock()
+        mock_client.skills.create.return_value = MagicMock(id="sk-1")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            skill_dir = Path(tmpdir) / "bundle"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text("# S")
+            (skill_dir / "data.txt").write_text("payload")
+            (skill_dir / "link.txt").symlink_to(skill_dir / "data.txt")
+
+            runner._upload_skill(mock_client, skill_dir, "bundle")
+
+            kw = mock_client.skills.create.call_args.kwargs["files"]
+            rels = {t[0] for t in kw}
+            assert "data.txt" in rels
+            assert "link.txt" in rels
+            by_rel = {t[0]: t[1] for t in kw}
+            assert by_rel["link.txt"] == b"payload"
+
 
 class TestContainerLifecycle:
     def test_create_container_attaches_skill(self):
@@ -460,8 +520,8 @@ class TestContainerLifecycle:
             assert "/workspace/src/main.py" in uploaded
             assert mock_client.containers.files.create.call_count == 2
 
-    def test_upload_workspace_skips_symlinks(self):
-        """Symlinks could read outside the workspace (CWE-59)."""
+    def test_upload_workspace_follows_safe_symlinks(self):
+        """Symlinks under the workspace are followed (symlinked skills, etc.)."""
         from agent_eval.agent.responses_api import ResponsesAPIRunner
         runner = ResponsesAPIRunner(base_url="http://localhost:8000")
         mock_client = MagicMock()
@@ -473,9 +533,27 @@ class TestContainerLifecycle:
             (ws / "link.txt").symlink_to(ws / "real.txt")
 
             uploaded = runner._upload_workspace(mock_client, "ctr-123", ws)
-            assert len(uploaded) == 1
+            assert len(uploaded) == 2
             assert "/workspace/real.txt" in uploaded
-            assert "/workspace/link.txt" not in uploaded
+            assert "/workspace/link.txt" in uploaded
+
+    def test_upload_workspace_skips_escape_symlinks(self):
+        """Symlinks resolving outside the workspace must not be uploaded."""
+        from agent_eval.agent.responses_api import ResponsesAPIRunner
+        runner = ResponsesAPIRunner(base_url="http://localhost:8000")
+        mock_client = MagicMock()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            ws = root / "ws"
+            ws.mkdir()
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "secret.txt").write_text("secret")
+            (ws / "evil.txt").symlink_to(outside / "secret.txt")
+
+            uploaded = runner._upload_workspace(mock_client, "ctr-123", ws)
+            assert uploaded == set()
 
     def test_download_syncs_both_new_and_modified_files(self):
         """Modified uploaded files must be synced back, not just new ones."""
@@ -794,7 +872,21 @@ class TestEdgeCases:
             skill_dir = ws / ".skills" / "my-skill"
             skill_dir.mkdir(parents=True)
             (skill_dir / "SKILL.md").write_text("# Skill")
-            assert runner._find_skill_dir(ws, "my-skill") == skill_dir
+            assert runner._find_skill_dir(ws, "my-skill") == skill_dir.resolve()
+
+    def test_find_skill_dir_resolves_symlink(self):
+        from agent_eval.agent.responses_api import ResponsesAPIRunner
+        runner = ResponsesAPIRunner(base_url="http://localhost:8000")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            real = root / "real-skill"
+            real.mkdir()
+            (real / "SKILL.md").write_text("# Real")
+            ws = root / "ws"
+            link = ws / "skills" / "my-skill"
+            link.parent.mkdir(parents=True)
+            link.symlink_to(real)
+            assert runner._find_skill_dir(ws, "my-skill") == real.resolve()
 
     def test_find_skill_dir_skills(self):
         from agent_eval.agent.responses_api import ResponsesAPIRunner
@@ -804,7 +896,7 @@ class TestEdgeCases:
             skill_dir = ws / "skills" / "my-skill"
             skill_dir.mkdir(parents=True)
             (skill_dir / "SKILL.md").write_text("# Skill")
-            assert runner._find_skill_dir(ws, "my-skill") == skill_dir
+            assert runner._find_skill_dir(ws, "my-skill") == skill_dir.resolve()
 
     def test_find_skill_dir_requires_skill_md(self):
         """A directory without SKILL.md must not match."""
