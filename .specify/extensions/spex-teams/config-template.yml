@@ -1,4 +1,0 @@
-# Teams Extension Configuration
-agent_teams:
-  env_var: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
-  max_teammates: 5
