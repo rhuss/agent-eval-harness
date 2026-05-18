@@ -87,4 +87,4 @@ def judge(outputs: dict, config: dict | None = None) -> tuple[bool, str]:
 | Unknown builtin name | `Unknown builtin judge '{name}'. Available: {sorted_names}` |
 | Duplicate judge name | `Duplicate judge name '{name}' in eval.yaml` |
 | Name collision across categories | `Builtin judge name collision: '{name}' found in both {cat1}/ and {cat2}/` |
-| Mutually exclusive fields | `Judge '{name}': type='builtin' is mutually exclusive with 'check', 'prompt', 'prompt_file', 'module', 'function'` |
+| Mutually exclusive fields | `Judge '{name}': type='builtin' is mutually exclusive with {conflicting_fields}` (where `{conflicting_fields}` lists only the fields actually set, e.g. `'check'` or `'check', 'module'`) |
