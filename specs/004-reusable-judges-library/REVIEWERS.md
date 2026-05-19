@@ -1,6 +1,6 @@
 # Review Guide: Reusable Judges Library
 
-**Generated**: 2026-05-17 | **Spec**: [spec.md](spec.md)
+**Generated**: 2026-05-17 (revised 2026-05-19) | **Spec**: [spec.md](spec.md)
 
 ## Why This Change
 
@@ -8,47 +8,52 @@ Skill authors evaluating their Claude Code skills currently write every judge fr
 
 ## What Changes
 
-The harness gains a built-in judges library: a `agent_eval/judges/` package with categorized judge modules (safety, process, efficiency) that skill authors reference via `type: builtin` in eval.yaml. Authors add two lines of config (name and type) to get a working judge, no Python required. The scoring pipeline and report rendering are extended to support the new judge type alongside existing inline check, LLM, and external code judges. No breaking changes to existing eval.yaml configurations.
+The harness gains a built-in judges library: an `agent_eval/judges/` package with categorized judge files (Python functions and LLM prompt templates) that skill authors reference via a `builtin` field in eval.yaml. The `name` field stays user-defined for thresholds and reports. Authors add two lines of config (name and builtin) to get a working judge. The scoring pipeline and report rendering are extended to support the new judge type alongside existing inline check, LLM, and external code judges. No breaking changes to existing eval.yaml configurations.
 
 ## How It Works
 
-A new `agent_eval/judges/` Python package contains category subdirectories (`safety/`, `process/`, `efficiency/`), each with standalone judge modules. A `BuiltinJudgeRegistry` class in the package `__init__.py` auto-discovers judges by scanning subdirectories at scoring time, building a flat `{name: callable}` map. The existing `JudgeConfig` dataclass gets two new fields: `type` (discriminator, value `"builtin"`) and `config` (optional dict passed to the judge function). The `load_judges()` function in `score.py` gains a new routing branch for `type == "builtin"` that resolves the judge via the registry, wraps it to pass the config dict, and returns it in the same `(name, scorer, condition, judge_type)` tuple format. Judge functions follow the signature `(outputs: dict, config: dict | None = None) -> tuple[bool, str]`.
+A new `agent_eval/judges/` Python package contains category subdirectories (`safety/`, `process/`, `efficiency/`, `quality/`), with standalone judge files. A `BuiltinJudgeRegistry` class in the package `__init__.py` auto-discovers judges by scanning subdirectories at scoring time, auto-detecting type from file extension: `.py` files become Python judge entries, `.md` files become LLM prompt judge entries. The registry builds a flat `{name: entry}` map. The existing `JudgeConfig` dataclass gets two new fields: `builtin` (resolves to a registered judge name) and `config` (optional dict). The `load_judges()` function in `score.py` gains a new routing branch for `builtin` that resolves the judge via the registry and creates the appropriate scorer (direct callable for Python, template-render-then-LLM for prompts).
 
-Three initial judges ship: `no_harmful_content` (scans output for harmful content), `tool_call_validation` (checks tool calls completed without errors), and `cost_budget` (verifies execution cost against a configurable threshold).
+Four initial judges ship: `no_harmful_content` (Python, scans output for harmful content), `tool_call_validation` (Python, checks tool calls completed without errors), `cost_budget` (Python, verifies cost against configurable threshold), and `output_completeness` (LLM, evaluates output completeness via Jinja2 prompt template).
 
 ## When It Applies
 
 **Applies when**:
 - Configuring judges in eval.yaml for any skill evaluation
-- Wanting common guardrail checks without writing custom Python
+- Wanting common guardrail checks without writing custom code or prompts
 - Needing to customize a built-in judge's behavior (vendor and modify the file)
 
 **Does not apply when**:
 - Using judge presets or curated bundles (out of scope, future feature)
 - Comparing event patterns between runs for regression fingerprinting (out of scope)
-- Writing LLM-based or inline check judges (existing judge types, unchanged)
 
 ## Key Decisions
 
-1. **Flat name resolution over qualified paths**: Judges are referenced by simple name (e.g., `no_harmful_content`) rather than category-qualified paths (`safety/no_harmful_content`). The registry auto-discovers across all category directories and detects name collisions at startup. Simpler for authors, and collisions are caught early with clear errors.
+1. **`builtin` field over `type: builtin`**: The `builtin` field follows the existing field-based type inference pattern (like `check`, `prompt`, `module`). This keeps `name` user-defined for thresholds and reports, and avoids introducing an explicit type discriminator that's inconsistent with existing judge types. Decided based on reviewer feedback (PR #66, @astefanutti).
 
-2. **Optional config dict over environment variables**: Built-in judges accept an optional `config` parameter from eval.yaml rather than using environment variables. This keeps configuration per-judge (env vars are global and would collide with multiple judges).
+2. **Dual-type registry (Python + LLM)**: The registry supports both `.py` (Python function) and `.md` (LLM prompt template) judge files, auto-detected by extension. This allows the library to ship judges using whichever approach best fits the evaluation pattern.
 
-3. **Auto-discovery over static registry**: The `BuiltinJudgeRegistry` scans subdirectories dynamically rather than maintaining a static manifest in `__init__.py`. Adding a new judge only requires dropping a file in the right category directory.
+3. **Flat name resolution over qualified paths**: Judges are referenced by simple name (e.g., `builtin: no_harmful_content`) rather than category-qualified paths. The registry auto-discovers across all category directories and detects name collisions at startup.
 
-4. **Documentation-only versioning**: Each judge module defines a `__version__` string for changelog purposes. No runtime pinning mechanism in eval.yaml. Authors who need old behavior can vendor the judge file.
+4. **Jinja2 for LLM prompt templates**: LLM judge files use Jinja2 templating with `config` and `outputs` as template variables. Provides conditionals, loops, and filters (especially `tojson`) for flexible prompt construction.
 
-5. **Extending load_judges over new scoring module**: The existing `load_judges()` function gets a new routing branch rather than a separate builtin judge runner. This avoids duplicating the result normalization logic.
+5. **Optional config dict over environment variables**: Built-in judges accept an optional `config` parameter from eval.yaml rather than using environment variables. For Python judges, passed as the second function argument. For LLM judges, available as a Jinja template variable.
+
+6. **Lazy registry instantiation**: The registry is only created on first encounter of a `builtin` field, avoiding filesystem overhead for configs that don't use builtins.
+
+7. **Documentation-only versioning**: Each judge file defines a `__version__` string. No runtime pinning mechanism. Authors who need old behavior can vendor the judge file.
 
 ## Areas Needing Attention
 
-- The `no_harmful_content` judge uses pattern-based detection without an LLM. Its effectiveness depends on the quality of the pattern list. Consider whether this is sufficient or if an LLM-based safety judge should be offered as an alternative.
-- The `config` parameter changes the judge function signature from `(outputs)` to `(outputs, config=None)`. While backward-compatible via the default, existing external code judges that don't accept `**kwargs` could break if `config` is ever passed to them unintentionally. The implementation must only pass `config` for builtin judges.
+- The `no_harmful_content` judge uses pattern-based detection without an LLM. Its effectiveness depends on the quality of the pattern list. The `output_completeness` LLM judge serves as the LLM-based evaluation pattern.
+- The `config` parameter changes the judge function signature from `(outputs)` to `(outputs, config=None)`. The implementation must only pass `config` for builtin judges, not existing external code judges.
 - The 4-tuple change to `load_judges()` return format touches the `score_cases()` function and potentially other callers. All call sites must be updated.
+- Jinja2 becomes a new dependency. Verify it's acceptable for the project's dependency policy.
+- LLM judge response parsing (extracting JSON from LLM output) needs robust error handling for malformed responses.
 
 ## Open Questions
 
-No open questions identified. All ambiguities were resolved during the clarification session (see spec.md Clarifications section).
+No open questions identified. All ambiguities were resolved during clarification sessions (see spec.md Clarifications section).
 
 ## Review Checklist
 
@@ -57,9 +62,39 @@ No open questions identified. All ambiguities were resolved during the clarifica
 - [ ] Scope matches the stated boundaries
 - [ ] Success criteria are achievable
 - [ ] No unstated assumptions
-- [ ] Judge function signature is consistent across all three judge modules
-- [ ] `BuiltinJudgeRegistry` handles edge cases (empty directories, non-Python files, missing `judge` function)
+- [ ] Python judge function signature is consistent across all three Python judge modules
+- [ ] LLM judge prompt template follows the documented contract
+- [ ] `BuiltinJudgeRegistry` handles edge cases (empty directories, non-Python/non-Markdown files, missing `judge` function)
 - [ ] Duplicate name detection covers all combinations (builtin-builtin, builtin-custom, custom-custom)
+- [ ] Vendoring path works for both Python (module/function) and LLM (prompt_file) judges
+
+---
+
+## Revision History
+
+### Rev 1 (2026-05-19) - PR #66 review feedback from @astefanutti
+
+**Trigger**: PR review feedback addressing 6 comments on API design and judge type support
+
+**Spec changes**:
+- Replaced `type: builtin` with `builtin` field as type discriminator (follows existing field inference pattern)
+- Removed `type` field from `JudgeConfig`, added `builtin` field
+- Extended registry to support both Python (`.py`) and LLM prompt (`.md`) judge files
+- Added Jinja2 templating for LLM judge prompt rendering
+- Added fourth initial judge: `output_completeness` (LLM, quality category)
+- Fixed all YAML examples: `condition` -> `if` (matches actual field name)
+- Added FR-012 (mutual exclusivity validation) and FR-013 (LLM model override)
+- Added vendoring path documentation for LLM judges (use `prompt_file`)
+
+**Quality gates**:
+- review-spec: pending (revision in progress)
+- review-plan: pending (revision in progress)
+
+**Cascade impact**:
+- plan.md: regenerated (new LLM judge infrastructure, Jinja2 dependency, dual-type registry)
+- tasks.md: regenerated (20 tasks, was 18; added T006 for Jinja rendering, T010 for LLM judge)
+- quickstart.md: regenerated (new syntax, added LLM judge example)
+- REVIEWERS.md: Key Decisions, What Changes, How It Works, Areas Needing Attention sections updated
 
 ---
 
