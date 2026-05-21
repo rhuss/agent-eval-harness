@@ -42,3 +42,6 @@ credentials/
 .claude/skills/
 .claude/settings.local.json
 .specify/
+
+# Brainstorm docs (local working documents, not for PR)
+brainstorm/
