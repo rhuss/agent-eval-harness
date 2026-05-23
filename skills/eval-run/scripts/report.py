@@ -1160,7 +1160,9 @@ def _render_scoring_summary(summary, config, baseline_summary=None):
                      or "—")
     for jc in config.get("judges", []):
         jname = jc.get("name", "")
-        if jc.get("check"):
+        if jc.get("builtin"):
+            judge_info[jname] = ("builtin", jc.get("model") or "—")
+        elif jc.get("check"):
             judge_info[jname] = ("check", "—")
         elif jc.get("prompt") or jc.get("prompt_file"):
             judge_info[jname] = ("llm", jc.get("model") or default_model)
@@ -1237,7 +1239,10 @@ def _render_scoring_summary(summary, config, baseline_summary=None):
                 status_label = "PASS" if ok else "FAIL"
 
         jtype, jmodel = judge_info.get(judge_name, ("—", "—"))
-        type_label = jtype if jtype == "check" else f'{jtype} ({jmodel.split("@")[0]})'
+        if jtype in ("check", "code", "builtin") and jmodel == "—":
+            type_label = jtype
+        else:
+            type_label = f'{jtype} ({jmodel.split("@")[0]})'
         html += f'<tr class="metric-row"><td>{_esc(judge_name)}</td>'
         html += f'<td class="judge-type">{_esc(type_label)}</td>'
         html += f"<td>{metric_name}</td><td>{metric_val}</td>"

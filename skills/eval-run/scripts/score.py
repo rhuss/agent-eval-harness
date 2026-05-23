@@ -276,39 +276,128 @@ def _extract_tool_calls(stdout_text, tool_outputs):
 # Judge loading and scoring
 # ---------------------------------------------------------------------------
 
+def _render_jinja2_template(template_text, arguments, outputs):
+    """Render a Jinja2 template with arguments and outputs as variables."""
+    from jinja2 import Environment
+    env = Environment()
+    env.filters["tojson"] = lambda v: json.dumps(v, indent=2, default=str)
+    template = env.from_string(template_text)
+    return template.render(arguments=arguments or {}, outputs=outputs or {})
+
+
 def load_judges(config, project_root=None):
     """Load all judges from config.
 
-    Judge types determined by which fields are set:
+    Judge types (determined by which fields are set):
+    - builtin: resolves via BuiltinJudgeRegistry
     - check: inline Python snippet
     - prompt/prompt_file: LLM judge
     - module/function: external code judge
+
+    Returns list of (name, scorer, condition, judge_type) 4-tuples.
     """
+    # Duplicate name validation
+    seen_names = set()
+    for jc in config.judges:
+        if jc.name == "pairwise":
+            continue
+        if jc.name in seen_names:
+            raise ValueError(f"Duplicate judge name '{jc.name}' in eval.yaml")
+        seen_names.add(jc.name)
+
+    registry = None
     judges = []
     for jc in config.judges:
         if jc.name == "pairwise":
-            continue  # Pairwise is only used by score.py pairwise, not regular scoring
-        if jc.check:
+            continue
+
+        if jc.builtin:
+            # Validate mutual exclusivity
+            conflicting = [f for f in ("check", "prompt", "prompt_file",
+                                       "module", "function")
+                           if getattr(jc, f, "")]
+            if conflicting:
+                raise ValueError(
+                    f"Judge '{jc.name}': 'builtin' is mutually exclusive "
+                    f"with {', '.join(conflicting)}")
+            # Lazy registry instantiation
+            if registry is None:
+                from agent_eval.judges import BuiltinJudgeRegistry
+                registry = BuiltinJudgeRegistry()
+                registry.discover()
+            entry = registry.get(jc.builtin)
+            scorer = _make_builtin_scorer(entry, jc, config)
+            judge_type = "builtin"
+        elif jc.check:
             scorer = _make_inline_check(jc)
+            judge_type = "check"
         elif jc.prompt or jc.prompt_file:
             scorer = _load_llm_judge(jc, config, project_root)
+            judge_type = "llm"
         elif jc.module and jc.function:
             scorer = _load_code_judge(jc, project_root)
+            judge_type = "code"
         else:
             print(f"  Warning: judge '{jc.name}' has no check, prompt, or module",
                   file=sys.stderr)
             continue
         if scorer:
-            judges.append((jc.name, scorer, jc.condition))
+            judges.append((jc.name, scorer, jc.condition, judge_type))
     return judges
+
+
+def _make_builtin_scorer(entry, jc, config):
+    """Create a scorer callable from a BuiltinJudgeEntry."""
+    if entry.kind == "python":
+        fn = getattr(entry.module, entry.function_name)
+        arguments = jc.arguments
+
+        def scorer(outputs=None, **kwargs):
+            return fn(outputs or {}, **arguments)
+
+        return scorer
+
+    elif entry.kind == "llm":
+        prompt_text = entry.prompt_path.read_text()
+        arguments = jc.arguments
+        judge_model = _resolve_judge_model(jc, config)
+
+        def scorer(outputs=None, **kwargs):
+            rendered = _render_jinja2_template(prompt_text, arguments,
+                                               outputs or {})
+            return _call_llm_judge_for_bool(rendered, judge_model)
+
+        return scorer
+
+    raise ValueError(f"Unknown builtin judge kind: {entry.kind}")
+
+
+def _call_llm_judge_for_bool(prompt, model):
+    """Call an LLM with a judge prompt and parse the JSON response into (bool, str)."""
+    client = _get_anthropic_client()
+    response = client.messages.create(
+        model=model,
+        max_tokens=1024,
+        system="You are a judge evaluating agent outputs. "
+               "Return a JSON object with 'passed' (boolean) and 'rationale' (string).",
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = response.content[0].text.strip()
+    match = re.search(r'"passed"\s*:\s*(true|false)', text, re.IGNORECASE)
+    if match:
+        passed = match.group(1).lower() == "true"
+        rat_match = re.search(r'"rationale"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+        rationale = rat_match.group(1) if rat_match else text[:200]
+        return (passed, rationale)
+    return (False, f"Could not parse judge response: {text[:200]}")
 
 
 def score_cases(judges, case_dirs, config, run_id=None):
     """Score all cases with all judges in parallel."""
     if not case_dirs:
-        return {"per_case": {}, "aggregated": {n: {"values": [], "mean": None, "pass_rate": None} for n, _, _c in judges}}
+        return {"per_case": {}, "aggregated": {n: {"values": [], "mean": None, "pass_rate": None} for n, *_ in judges}}
     per_case = {}
-    aggregated = {name: {"values": []} for name, _, _c in judges}
+    aggregated = {name: {"values": []} for name, *_ in judges}
     parallelism = min(len(case_dirs), os.cpu_count() or 4)
     lock = threading.Lock()
     completed = 0
@@ -317,7 +406,7 @@ def score_cases(judges, case_dirs, config, run_id=None):
         case_id = case_dir.name
         record = load_case_record(case_dir, config, run_id=run_id)
         case_results = {}
-        for name, scorer, condition in judges:
+        for name, scorer, condition, judge_type in judges:
             # Check condition — skip if it evaluates to False
             if condition:
                 try:
@@ -327,12 +416,14 @@ def score_cases(judges, case_dirs, config, run_id=None):
                         case_results[name] = {
                             "value": None,
                             "rationale": f"Skipped: condition '{condition}' is false",
+                            "judge_type": judge_type,
                         }
                         continue
                 except Exception as e:
                     case_results[name] = {
                         "value": None,
                         "rationale": f"Condition error: {e}",
+                        "judge_type": judge_type,
                     }
                     continue
             try:
@@ -342,25 +433,39 @@ def score_cases(judges, case_dirs, config, run_id=None):
                     case_results[name] = {
                         "value": result[0],
                         "rationale": result[1],
+                        "judge_type": judge_type,
                     }
                 elif hasattr(result, "value"):
                     case_results[name] = {
                         "value": result.value,
                         "rationale": getattr(result, "rationale", ""),
+                        "judge_type": judge_type,
                     }
                 elif isinstance(result, (bool, int, float, str)):
-                    case_results[name] = {"value": result, "rationale": ""}
+                    case_results[name] = {"value": result, "rationale": "",
+                                          "judge_type": judge_type}
                 else:
-                    case_results[name] = {"value": result, "rationale": ""}
+                    case_results[name] = {"value": result, "rationale": "",
+                                          "judge_type": judge_type}
             except Exception as e:
-                case_results[name] = {"value": None, "error": str(e)}
+                case_results[name] = {"value": None, "error": str(e),
+                                      "judge_type": judge_type}
         return case_id, case_results
 
     with ThreadPoolExecutor(max_workers=parallelism) as pool:
         futures = {pool.submit(_score_case, d): d for d in case_dirs}
         for future in as_completed(futures):
             completed += 1
-            case_id, case_results = future.result()
+            try:
+                case_id, case_results = future.result()
+            except Exception as e:
+                case_dir = futures[future]
+                case_id = case_dir.name
+                case_results = {name: {"value": None, "error": str(e),
+                                       "judge_type": jt}
+                                for name, _, _, jt in judges}
+                print(f"  [{completed}/{len(case_dirs)}] {case_id} ERROR: {e}",
+                      file=sys.stderr, flush=True)
             per_case[case_id] = case_results
             with lock:
                 for name, result in case_results.items():
@@ -391,14 +496,15 @@ def score_cases(judges, case_dirs, config, run_id=None):
 def _make_inline_check(jc):
     """Create a scorer from an inline check script."""
     source = jc.check
-    wrapped = f"def _check(outputs):\n{textwrap.indent(source, '    ')}"
+    arguments = jc.arguments
+    wrapped = f"def _check(outputs, arguments):\n{textwrap.indent(source, '    ')}"
     code = compile(wrapped, f"<check:{jc.name}>", "exec")
     ns = {"__builtins__": __builtins__}
     exec(code, ns)
     check_fn = ns["_check"]
 
     def scorer(outputs=None, **kwargs):
-        return check_fn(outputs or {})
+        return check_fn(outputs or {}, arguments or {})
 
     return scorer
 
@@ -407,7 +513,15 @@ def _load_code_judge(jc, project_root=None):
     if project_root and str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     mod = importlib.import_module(jc.module)
-    return getattr(mod, jc.function)
+    fn = getattr(mod, jc.function)
+    if jc.arguments:
+        arguments = jc.arguments
+
+        def scorer(outputs=None, **kwargs):
+            return fn(outputs=outputs, **arguments)
+
+        return scorer
+    return fn
 
 
 def _resolve_judge_model(jc, config):
@@ -442,6 +556,17 @@ def _load_llm_judge(jc, config, project_root=None):
         _resolve_under(root, path)
         if path.exists():
             prompt += f"\n\n## Context: {path.name}\n\n{path.read_text()}"
+
+    # If arguments are present, apply Jinja2 rendering to the prompt
+    if jc.arguments:
+        arguments = jc.arguments
+        judge_model = _resolve_judge_model(jc, config)
+
+        def scorer(outputs=None, **kwargs):
+            rendered = _render_jinja2_template(prompt, arguments, outputs or {})
+            return _call_llm_judge_for_bool(rendered, judge_model)
+
+        return scorer
 
     # Use direct Anthropic client when Vertex AI is configured (MLflow's
     # make_judge uses litellm which requires OpenAI API key by default)
