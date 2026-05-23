@@ -186,6 +186,10 @@ class JudgeConfig:
     # External code judge
     module: str = ""
     function: str = ""
+    # Builtin judge (resolves via BuiltinJudgeRegistry)
+    builtin: str = ""
+    # Arguments passed as **kwargs to Python judges, Jinja var to LLM judges
+    arguments: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -357,6 +361,8 @@ class EvalConfig:
                 model=j.get("model", ""),
                 module=j.get("module", ""),
                 function=j.get("function", ""),
+                builtin=j.get("builtin", ""),
+                arguments=j.get("arguments") or {},
             ))
 
         # Thresholds
