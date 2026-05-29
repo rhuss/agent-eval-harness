@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.2.3...v1.3.0) (2026-05-29)
+
+
+### Features
+
+* **eval-optimize:** add judge type awareness, targeted re-runs, smarter analysis ([#83](https://github.com/opendatahub-io/agent-eval-harness/issues/83)) ([ce89bc5](https://github.com/opendatahub-io/agent-eval-harness/commit/ce89bc531f9be2369a0d91c29beaed60412ac54c))
+
 ## [1.2.3](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.2.2...v1.2.3) (2026-05-29)
 
 
