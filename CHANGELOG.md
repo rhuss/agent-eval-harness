@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.2.0...v1.2.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **eval-run:** rename --no-judge, --case-filter, exact case matching ([#80](https://github.com/opendatahub-io/agent-eval-harness/issues/80)) ([06a3d0c](https://github.com/opendatahub-io/agent-eval-harness/commit/06a3d0cf43190099ae611c8481c5ef048a4068c5))
+
 # [1.2.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.1.0...v1.2.0) (2026-05-29)
 
 
