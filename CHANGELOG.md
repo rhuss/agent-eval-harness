@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.3.0...v1.4.0) (2026-05-29)
+
+
+### Features
+
+* **eval-dataset:** builtin judges, conditional coverage, run-aware expansion ([#84](https://github.com/opendatahub-io/agent-eval-harness/issues/84)) ([9c3995d](https://github.com/opendatahub-io/agent-eval-harness/commit/9c3995dae7737e73fcd72f47f49a21cffbc67794))
+
 # [1.3.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.2.3...v1.3.0) (2026-05-29)
 
 
