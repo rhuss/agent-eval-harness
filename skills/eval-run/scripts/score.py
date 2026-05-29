@@ -276,13 +276,64 @@ def _extract_tool_calls(stdout_text, tool_outputs):
 # Judge loading and scoring
 # ---------------------------------------------------------------------------
 
+class _OutputsProxy(dict):
+    """Dict subclass whose __str__ renders files as formatted text.
+
+    Provides backward compatibility for prompt templates using {{ outputs }}
+    (bare variable) which expects formatted file listings, while allowing
+    {{ outputs.files }}, {{ outputs.conversation }} etc. for structured access.
+    """
+
+    def __str__(self):
+        files = self.get("files", {})
+        parts = []
+        for path, content in sorted(files.items()):
+            if isinstance(content, dict) and content.get("_binary"):
+                parts.append(f"\n### {path}\n\n<binary: {content['name']}>\n")
+            else:
+                parts.append(f"\n### {path}\n\n{content}\n")
+        return "".join(parts)
+
+
 def _render_jinja2_template(template_text, arguments, outputs):
-    """Render a Jinja2 template with arguments and outputs as variables."""
+    """Render a Jinja2 template with arguments and outputs as variables.
+
+    Template variables available:
+    - {{ outputs }} - formatted file listings (via __str__) or dict access
+    - {{ outputs.files }}, {{ outputs.events }}, etc. - structured access
+    - {{ arguments }} - judge arguments from eval.yaml
+    - {{ annotations }} - formatted annotation text
+    - {{ conversation }} - root-level assistant text from events
+    """
     from jinja2 import Environment
     env = Environment()
     env.filters["tojson"] = lambda v: json.dumps(v, indent=2, default=str)
+
+    out = _OutputsProxy(outputs or {})
+
+    # Pre-render annotations as formatted text for {{ annotations }}
+    ann = out.get("annotations", {})
+    ann_text = ""
+    for key, val in sorted(ann.items()):
+        ann_text += f"- **{key}**: {val}\n"
+    for key in sorted(out):
+        if key.startswith("annotation_") and key.endswith("_content"):
+            field = key[len("annotation_"):-len("_content")]
+            ann_text += f"\n### {field} (file content)\n\n{out[key]}\n"
+
+    # Pre-render conversation text for {{ conversation }}
+    conversation = out.get("conversation", "")
+    if not conversation and out.get("events"):
+        from agent_eval.events import extract_conversation_text
+        conversation = extract_conversation_text(out["events"])
+
     template = env.from_string(template_text)
-    return template.render(arguments=arguments or {}, outputs=outputs or {})
+    return template.render(
+        arguments=arguments or {},
+        outputs=out,
+        annotations=ann_text,
+        conversation=conversation,
+    )
 
 
 def load_judges(config, project_root=None):
@@ -363,26 +414,76 @@ def _make_builtin_scorer(entry, jc, config):
         judge_model = _resolve_judge_model(jc, config)
 
         def scorer(outputs=None, **kwargs):
-            rendered = _render_jinja2_template(prompt_text, arguments,
-                                               outputs or {})
-            return _call_llm_judge_for_bool(rendered, judge_model)
+            out = outputs or {}
+            rendered = _render_jinja2_template(prompt_text, arguments, out)
+            images = _extract_images(out)
+            raw = _call_judge_llm(rendered, judge_model,
+                                  _BOOL_SYSTEM_PROMPT, images=images)
+            return _parse_bool_response(raw)
 
         return scorer
 
     raise ValueError(f"Unknown builtin judge kind: {entry.kind}")
 
 
-def _call_llm_judge_for_bool(prompt, model):
-    """Call an LLM with a judge prompt and parse the JSON response into (bool, str)."""
+def _extract_images(outputs):
+    """Extract base64-encoded images from binary file entries in outputs."""
+    import base64
+    image_extensions = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+    images = []
+    for path, content in sorted((outputs or {}).get("files", {}).items()):
+        if not isinstance(content, dict) or not content.get("_binary"):
+            continue
+        suffix = Path(path).suffix.lower()
+        if suffix not in image_extensions:
+            continue
+        try:
+            with open(content["path"], "rb") as img_f:
+                b64 = base64.standard_b64encode(img_f.read()).decode()
+            media_type = ("image/jpeg" if suffix in (".jpg", ".jpeg")
+                          else f"image/{suffix.lstrip('.')}")
+            images.append({"label": path, "media_type": media_type, "data": b64})
+        except OSError:
+            pass
+    return images
+
+
+_BOOL_SYSTEM_PROMPT = (
+    "You are a judge evaluating agent outputs. "
+    "Return a JSON object with 'passed' (boolean) and 'rationale' (string).")
+
+_SCORE_SYSTEM_PROMPT = (
+    "You are a judge evaluating skill outputs. "
+    "Return a JSON object with 'score' (integer 1-5) and 'rationale' (string).")
+
+
+def _call_judge_llm(prompt, model, system_prompt, images=None, max_tokens=1024):
+    """Call the Anthropic API with a judge prompt. Returns raw response text."""
     client = _get_anthropic_client()
+    if images:
+        content_parts = [{"type": "text", "text": prompt}]
+        for img in images:
+            content_parts.append({"type": "text",
+                                  "text": f"\n**Image: {img['label']}**"})
+            content_parts.append({"type": "image", "source": {
+                "type": "base64",
+                "media_type": img["media_type"],
+                "data": img["data"],
+            }})
+        user_message = content_parts
+    else:
+        user_message = prompt
     response = client.messages.create(
         model=model,
-        max_tokens=1024,
-        system="You are a judge evaluating agent outputs. "
-               "Return a JSON object with 'passed' (boolean) and 'rationale' (string).",
-        messages=[{"role": "user", "content": prompt}],
+        max_tokens=max_tokens,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_message}],
     )
-    text = response.content[0].text.strip()
+    return response.content[0].text.strip()
+
+
+def _parse_bool_response(text):
+    """Parse {"passed": bool, "rationale": str} from LLM response."""
     match = re.search(r'"passed"\s*:\s*(true|false)', text, re.IGNORECASE)
     if match:
         passed = match.group(1).lower() == "true"
@@ -390,6 +491,32 @@ def _call_llm_judge_for_bool(prompt, model):
         rationale = rat_match.group(1) if rat_match else text[:200]
         return (passed, rationale)
     return (False, f"Could not parse judge response: {text[:200]}")
+
+
+def _parse_score_response(text):
+    """Parse {"score": int, "rationale": str} from LLM response with fallbacks."""
+    try:
+        match = re.search(r'"score"\s*:\s*(\d+)', text)
+        if match:
+            score_val = int(match.group(1))
+            rationale_match = re.search(r'"rationale"\s*:\s*"([^"]*)"', text)
+            rationale = (rationale_match.group(1) if rationale_match
+                         else text[:200])
+            return (score_val, rationale)
+    except (ValueError, AttributeError):
+        pass
+    explicit = re.search(
+        r'(?:overall|score|rating)\s*[=:]\s*(\d)\b'
+        r'|(\d)\s*/\s*5'
+        r'|\*\*(\d)\*\*\s*/\s*5',
+        text, re.IGNORECASE)
+    if explicit:
+        score_val = int(next(g for g in explicit.groups() if g))
+        return (score_val, text[:200])
+    nums = re.findall(r'\b([1-5])\b', text)
+    if nums:
+        return (int(nums[-1]), text[:200])
+    return (3, f"Could not parse score from: {text[:200]}")
 
 
 def score_cases(judges, case_dirs, config, run_id=None):
@@ -557,24 +684,29 @@ def _load_llm_judge(jc, config, project_root=None):
         if path.exists():
             prompt += f"\n\n## Context: {path.name}\n\n{path.read_text()}"
 
-    # If arguments are present, apply Jinja2 rendering to the prompt
-    if jc.arguments:
-        arguments = jc.arguments
+    # Anthropic path (direct client, supports Vertex AI)
+    if (os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID")
+            or os.environ.get("ANTHROPIC_API_KEY")):
         judge_model = _resolve_judge_model(jc, config)
+        if jc.feedback_type == "bool":
+            system_prompt = _BOOL_SYSTEM_PROMPT
+            parser = _parse_bool_response
+        else:
+            system_prompt = _SCORE_SYSTEM_PROMPT
+            parser = _parse_score_response
+        arguments = jc.arguments
 
         def scorer(outputs=None, **kwargs):
-            rendered = _render_jinja2_template(prompt, arguments, outputs or {})
-            return _call_llm_judge_for_bool(rendered, judge_model)
+            out = outputs or {}
+            rendered = _render_jinja2_template(prompt, arguments, out)
+            images = _extract_images(out)
+            raw = _call_judge_llm(rendered, judge_model, system_prompt,
+                                  images=images)
+            return parser(raw)
 
         return scorer
 
-    # Use direct Anthropic client when Vertex AI is configured (MLflow's
-    # make_judge uses litellm which requires OpenAI API key by default)
-    if os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID") or os.environ.get("ANTHROPIC_API_KEY"):
-        judge_model = _resolve_judge_model(jc, config)
-        return _make_anthropic_llm_judge(jc.name, prompt, judge_model)
-
-    # MLflow make_judge (requires OpenAI-compatible API key)
+    # MLflow make_judge fallback (requires OpenAI-compatible API key)
     try:
         from mlflow.genai.judges import make_judge
         kwargs = {"name": jc.name, "instructions": prompt}
@@ -586,111 +718,6 @@ def _load_llm_judge(jc, config, project_root=None):
 
     raise RuntimeError(f"LLM judge '{jc.name}' requires ANTHROPIC_VERTEX_PROJECT_ID, "
                        "ANTHROPIC_API_KEY, or OPENAI_API_KEY")
-
-
-def _make_anthropic_llm_judge(name, prompt, judge_model):
-    """Create an LLM judge using the Anthropic client directly.
-
-    Falls back to this when MLflow make_judge fails (e.g., no OpenAI key).
-    Supports Vertex AI via ANTHROPIC_VERTEX_PROJECT_ID.
-    """
-    import re
-
-    def scorer(outputs=None, **kwargs):
-        import base64
-        client = _get_anthropic_client()
-        image_extensions = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
-        image_blocks = []
-
-        # Render {{ outputs }} template variable
-        rendered_prompt = prompt
-        if outputs and "{{ outputs }}" in rendered_prompt:
-            files = outputs.get("files", {})
-            output_text = ""
-            for path, content in sorted(files.items()):
-                if isinstance(content, dict) and content.get("_binary"):
-                    suffix = Path(path).suffix.lower()
-                    if suffix in image_extensions:
-                        try:
-                            with open(content["path"], "rb") as img_f:
-                                b64 = base64.standard_b64encode(img_f.read()).decode()
-                            media_type = "image/jpeg" if suffix in (".jpg", ".jpeg") else f"image/{suffix.lstrip('.')}"
-                            image_blocks.append({"label": path, "media_type": media_type, "data": b64})
-                            output_text += f"\n### {path}\n\n[image attached below]\n"
-                        except OSError:
-                            output_text += f"\n### {path}\n\n<binary: {content['name']}>\n"
-                    else:
-                        output_text += f"\n### {path}\n\n<binary: {content['name']}>\n"
-                else:
-                    output_text += f"\n### {path}\n\n{content}\n"
-            rendered_prompt = rendered_prompt.replace("{{ outputs }}", output_text)
-
-        # Render {{ annotations }} template variable
-        if outputs and "{{ annotations }}" in rendered_prompt:
-            ann = outputs.get("annotations", {})
-            ann_text = ""
-            for key, val in sorted(ann.items()):
-                ann_text += f"- **{key}**: {val}\n"
-            # Include annotation file contents
-            for key in sorted(outputs):
-                if key.startswith("annotation_") and key.endswith("_content"):
-                    field = key[len("annotation_"):-len("_content")]
-                    ann_text += f"\n### {field} (file content)\n\n{outputs[key]}\n"
-            rendered_prompt = rendered_prompt.replace("{{ annotations }}", ann_text)
-
-        # Render {{ conversation }} template variable (root-level assistant text)
-        if outputs and "{{ conversation }}" in rendered_prompt:
-            from agent_eval.events import extract_conversation_text
-            events = outputs.get("events", [])
-            conversation_text = extract_conversation_text(events)
-            rendered_prompt = rendered_prompt.replace(
-                "{{ conversation }}", conversation_text)
-
-        # Build message content — multimodal if images present
-        if image_blocks:
-            content_parts = [{"type": "text", "text": rendered_prompt}]
-            for img in image_blocks:
-                content_parts.append({"type": "text", "text": f"\n**Image: {img['label']}**"})
-                content_parts.append({"type": "image", "source": {"type": "base64", "media_type": img["media_type"], "data": img["data"]}})
-            user_message = content_parts
-        else:
-            user_message = rendered_prompt
-
-        response = client.messages.create(
-            model=judge_model,
-            max_tokens=1024,
-            system="You are a judge evaluating skill outputs. "
-                   "Return a JSON object with 'score' (integer 1-5) and 'rationale' (string).",
-            messages=[{"role": "user", "content": user_message}],
-        )
-        text = response.content[0].text.strip()
-        # Extract score from JSON response
-        try:
-            # Try parsing as JSON — search for {"score": N} anywhere
-            match = re.search(r'"score"\s*:\s*(\d+)', text)
-            if match:
-                score_val = int(match.group(1))
-                rationale_match = re.search(r'"rationale"\s*:\s*"([^"]*)"', text)
-                rationale = rationale_match.group(1) if rationale_match else text[:200]
-                return (score_val, rationale)
-        except (ValueError, AttributeError):
-            pass
-        # Fallback: find "Score: N" or "Overall: N" or "N/5" patterns
-        explicit = re.search(
-            r'(?:overall|score|rating)\s*[=:]\s*(\d)\b'
-            r'|(\d)\s*/\s*5'
-            r'|\*\*(\d)\*\*\s*/\s*5',
-            text, re.IGNORECASE)
-        if explicit:
-            score_val = int(next(g for g in explicit.groups() if g))
-            return (score_val, text[:200])
-        # Last resort: find the last standalone 1-5 digit (conclusion is at end)
-        nums = re.findall(r'\b([1-5])\b', text)
-        if nums:
-            return (int(nums[-1]), text[:200])
-        return (3, f"Could not parse score from: {text[:200]}")
-
-    return scorer
 
 
 def _parse_feedback_type(type_str):

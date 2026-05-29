@@ -128,13 +128,120 @@ class TestLoadJudgesBuiltin:
         assert name == "safety"
         assert judge_type == "builtin"
 
-        with patch("score._call_llm_judge_for_bool",
-                   return_value=(True, "ok")) as mock_call:
+        with patch("score._call_judge_llm",
+                   return_value='{"passed": true, "rationale": "ok"}') as mock_call:
             result = scorer(outputs={"conversation": "test", "files": {}})
             assert result == (True, "ok")
             rendered_prompt = mock_call.call_args[0][0]
             assert "malware" in rendered_prompt
             assert "test" in rendered_prompt
+
+
+class TestParsers:
+
+    def test_parse_bool_true(self):
+        from score import _parse_bool_response
+        result = _parse_bool_response('{"passed": true, "rationale": "looks good"}')
+        assert result == (True, "looks good")
+
+    def test_parse_bool_false(self):
+        from score import _parse_bool_response
+        result = _parse_bool_response('{"passed": false, "rationale": "found issues"}')
+        assert result == (False, "found issues")
+
+    def test_parse_bool_unparseable(self):
+        from score import _parse_bool_response
+        passed, rationale = _parse_bool_response("no json here")
+        assert passed is False
+        assert "Could not parse" in rationale
+
+    def test_parse_score_json(self):
+        from score import _parse_score_response
+        result = _parse_score_response('{"score": 4, "rationale": "mostly good"}')
+        assert result == (4, "mostly good")
+
+    def test_parse_score_fallback_pattern(self):
+        from score import _parse_score_response
+        score, _ = _parse_score_response("Overall score: 3 out of 5")
+        assert score == 3
+
+    def test_parse_score_last_resort(self):
+        from score import _parse_score_response
+        score, _ = _parse_score_response("The quality is moderate, I'd say 4")
+        assert score == 4
+
+    def test_parse_score_unparseable(self):
+        from score import _parse_score_response
+        score, rationale = _parse_score_response("no numbers here at all")
+        assert score == 3
+        assert "Could not parse" in rationale
+
+
+class TestOutputsProxy:
+
+    def test_str_renders_files(self):
+        from score import _OutputsProxy
+        proxy = _OutputsProxy({
+            "files": {
+                "main.py": "print('hello')",
+                "readme.md": "# Title",
+            }
+        })
+        text = str(proxy)
+        assert "### main.py" in text
+        assert "print('hello')" in text
+        assert "### readme.md" in text
+
+    def test_str_handles_binary(self):
+        from score import _OutputsProxy
+        proxy = _OutputsProxy({
+            "files": {
+                "image.dat": {"_binary": True, "name": "image.dat", "path": "/tmp/x"},
+            }
+        })
+        text = str(proxy)
+        assert "<binary: image.dat>" in text
+
+    def test_dict_access_preserved(self):
+        from score import _OutputsProxy
+        proxy = _OutputsProxy({"files": {"a.txt": "content"}, "cost_usd": 0.5})
+        assert proxy["cost_usd"] == 0.5
+        assert proxy.get("files") == {"a.txt": "content"}
+
+    def test_jinja2_renders_bare_outputs(self):
+        from score import _render_jinja2_template
+        template = "Files: {{ outputs }}"
+        result = _render_jinja2_template(
+            template, {},
+            {"files": {"test.py": "code"}},
+        )
+        assert "### test.py" in result
+        assert "code" in result
+
+    def test_jinja2_renders_dict_access(self):
+        from score import _render_jinja2_template
+        template = "Cost: {{ outputs.cost_usd }}"
+        result = _render_jinja2_template(template, {}, {"cost_usd": 0.42})
+        assert "0.42" in result
+
+    def test_jinja2_annotations_variable(self):
+        from score import _render_jinja2_template
+        template = "Annotations: {{ annotations }}"
+        result = _render_jinja2_template(
+            template, {},
+            {"annotations": {"key1": "val1", "key2": "val2"}},
+        )
+        assert "**key1**: val1" in result
+        assert "**key2**: val2" in result
+
+    def test_jinja2_conversation_variable(self):
+        from score import _render_jinja2_template
+        template = "Conversation: {{ conversation }}"
+        result = _render_jinja2_template(
+            template, {},
+            {"conversation": "Hello, I completed the task."},
+        )
+        assert "Hello, I completed the task." in result
 
 
 class TestLoadJudgesDuplicateValidation:
