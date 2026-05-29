@@ -84,7 +84,7 @@ thresholds:
 ## Python Judge Function Contract
 
 ```python
-def judge(outputs: dict, **kwargs) -> tuple[bool, str]:
+def judge(outputs: dict, **kwargs) -> tuple[bool | int | float, str]:
     """
     Args:
         outputs: Case record dict containing files, tool_calls, events,
@@ -93,8 +93,8 @@ def judge(outputs: dict, **kwargs) -> tuple[bool, str]:
                   Empty if no arguments specified.
 
     Returns:
-        Tuple of (passed: bool, rationale: str).
-        - passed: True if the case meets the judge's criteria
+        Tuple of (value, rationale: str).
+        - value: bool (pass/fail), int (1-5 score), or float
         - rationale: Human-readable explanation of the result
     """
 ```
@@ -113,13 +113,17 @@ LLM judge files are Jinja2 templates (`.md`) with these variables available:
 | `outputs` | dict | Full case record (same as Python judge `outputs` argument) |
 | `arguments` | dict | Values from `arguments` in eval.yaml (empty dict if not specified) |
 
-This contract applies uniformly to:
+Additional top-level template variables:
+- `annotations`: pre-rendered annotation text (formatted key-value pairs)
+- `conversation`: root-level assistant text extracted from events
+
+This contract applies uniformly to ALL LLM judges:
 - Builtin LLM judges (`.md` files in `agent_eval/judges/`)
-- Inline LLM judges (`prompt_file` with Jinja2 rendering when `arguments` is present)
+- Inline LLM judges (`prompt` or `prompt_file`)
 
-The template is rendered, sent to the LLM (using `model` field or `models.judge` default), and the response is parsed into a `(bool, str)` result.
+All LLM judges use Jinja2 for template rendering, regardless of whether `arguments` is specified.
 
-**Required output format**: The LLM response MUST contain a JSON object with `passed` (bool) and `rationale` (string) fields. The harness extracts the first JSON object from the response.
+**Required output format**: Depends on `feedback_type`. Default for `prompt`/`prompt_file` judges: `{"score": int 1-5, "rationale": str}`. For builtin LLM judges or `feedback_type: bool`: `{"passed": bool, "rationale": str}`.
 
 **Available Jinja filters**: Standard Jinja2 filters plus `tojson` for serializing dicts.
 
