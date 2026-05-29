@@ -1,7 +1,7 @@
 # Brainstorm: Structured Event Stream for Judges
 
 **Date:** 2026-05-06
-**Status:** implemented
+**Status:** active
 
 ## Problem Framing
 
