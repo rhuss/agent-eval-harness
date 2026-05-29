@@ -1,6 +1,5 @@
 """Built-in judges registry with auto-discovery from category subdirectories."""
 
-import importlib
 import importlib.util
 from dataclasses import dataclass
 from pathlib import Path

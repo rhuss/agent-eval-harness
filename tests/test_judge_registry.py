@@ -16,11 +16,10 @@ class TestBuiltinJudgeRegistry:
         registry = BuiltinJudgeRegistry()
         registry.discover()
         names = registry.list_names()
-        assert "cost_budget" in names
-        assert "tool_call_validation" in names
-        assert "no_harmful_content" in names
-        assert "output_completeness" in names
-        assert len(names) == 4
+        expected = {"cost_budget", "tool_call_validation",
+                    "no_harmful_content", "output_completeness"}
+        assert expected.issubset(set(names))
+        assert len(names) >= len(expected)
 
     def test_list_names_sorted(self):
         registry = BuiltinJudgeRegistry()

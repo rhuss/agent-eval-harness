@@ -6,11 +6,11 @@
 
 ### Decision: Extend `JudgeConfig` and `load_judges` in `score.py`
 
-**Rationale**: The current scoring pipeline in `skills/eval-run/scripts/score.py` already supports three judge types (inline check, LLM prompt, external code) via a routing pattern in `load_judges()`. Adding `type: builtin` as a fourth route keeps the architecture consistent. The `JudgeConfig` dataclass in `agent_eval/config.py` needs a new `type` field (currently the type is inferred from which fields are set).
+**Rationale**: The current scoring pipeline in `skills/eval-run/scripts/score.py` already supports three judge types (inline check, LLM prompt, external code) via a routing pattern in `load_judges()`. Adding a `builtin` field as a fourth route keeps the architecture consistent, following the existing field-based type inference pattern.
 
 **Alternatives considered**:
 - New scoring module: Rejected because splitting judge resolution across files adds complexity with no benefit. The existing `load_judges` function is the single entry point.
-- Separate builtin judge runner: Rejected because builtin judges use the same `(outputs, config) -> (bool, str)` contract as code judges. A separate runner would duplicate the result normalization logic.
+- Separate builtin judge runner: Rejected because builtin judges use the same `(outputs, **kwargs) -> (value, str)` contract as code judges. A separate runner would duplicate the result normalization logic.
 
 ## 2. Judge Discovery and Registry
 
@@ -24,13 +24,13 @@
 
 ## 3. Config Parameter Passing
 
-### Decision: Add optional `config` dict to eval.yaml judge entries, passed as second argument
+### Decision: Add optional `arguments` dict to eval.yaml judge entries, passed as `**kwargs`
 
-**Rationale**: The existing code judge path (`_load_code_judge`) calls `scorer(outputs=record)`. For builtin judges, the call becomes `scorer(outputs=record, config=judge_config.config)`. Judges that don't need config use `config=None` default. This requires adding a `config` field to `JudgeConfig`.
+**Rationale**: The existing code judge path (`_load_code_judge`) calls `scorer(outputs=record)`. For judges with `arguments`, values are passed as `**kwargs` to Python judges, as Jinja2 template variables to LLM judges, and as local variables to inline `check` judges. This requires adding an `arguments` field to `JudgeConfig`.
 
 **Alternatives considered**:
-- Environment variables: Rejected because config is per-judge, and env vars are global. Multiple judges would collide.
-- Embed config in outputs: Rejected because outputs represent case data, not judge configuration. Mixing concerns.
+- Environment variables: Rejected because arguments are per-judge, and env vars are global. Multiple judges would collide.
+- Embed arguments in outputs: Rejected because outputs represent case data, not judge configuration. Mixing concerns.
 
 ## 4. Report Differentiation
 
@@ -44,15 +44,16 @@
 
 ## 5. Initial Judge Implementations
 
-### Decision: Three judges covering the declared categories
+### Decision: Four judges covering the declared categories (2 Python, 2 LLM)
 
-| Judge | Category | What it checks | Key outputs fields |
-|-------|----------|----------------|--------------------|
-| `no_harmful_content` | safety | Agent output contains no harmful, dangerous, or inappropriate content | `conversation`, `files` |
-| `tool_call_validation` | process | Tool calls complete successfully, no errors in tool results | `tool_calls`, `events` |
-| `cost_budget` | efficiency | Execution cost stays within configurable threshold | `cost_usd` |
+| Judge | Category | Type | What it checks | Key outputs fields |
+|-------|----------|------|----------------|--------------------|
+| `no_harmful_content` | safety | LLM | Agent output contains no harmful, dangerous, or inappropriate content | `conversation`, `files` |
+| `tool_call_validation` | process | Python | Tool calls complete successfully, no errors in tool results | `tool_calls` |
+| `cost_budget` | efficiency | Python | Execution cost stays within configurable threshold | `cost_usd` |
+| `output_completeness` | quality | LLM | Agent output is complete and addresses all aspects of the task | `outputs` (full record) |
 
-**Rationale**: These three map directly to the most common evaluation needs surfaced across existing eval.yaml files in the project. Each requires different record fields, demonstrating the pattern for future judges.
+**Rationale**: These four cover the most common evaluation patterns. The split between Python (deterministic checks) and LLM (nuanced evaluation) demonstrates both judge types.
 
 ## 6. Duplicate Name Detection
 

@@ -12,9 +12,9 @@ The harness gains a built-in judges library: an `agent_eval/judges/` package wit
 
 ## How It Works
 
-A new `agent_eval/judges/` Python package contains category subdirectories (`safety/`, `process/`, `efficiency/`, `quality/`), with standalone judge files. A `BuiltinJudgeRegistry` class in the package `__init__.py` auto-discovers judges by scanning subdirectories at scoring time, auto-detecting type from file extension: `.py` files become Python judge entries, `.md` files become LLM prompt judge entries. The registry builds a flat `{name: entry}` map. The existing `JudgeConfig` dataclass gets two new fields: `builtin` (resolves to a registered judge name) and `config` (optional dict). The `load_judges()` function in `score.py` gains a new routing branch for `builtin` that resolves the judge via the registry and creates the appropriate scorer (direct callable for Python, template-render-then-LLM for prompts).
+A new `agent_eval/judges/` Python package contains category subdirectories (`safety/`, `process/`, `efficiency/`, `quality/`), with standalone judge files. A `BuiltinJudgeRegistry` class in the package `__init__.py` auto-discovers judges by scanning subdirectories at scoring time, auto-detecting type from file extension: `.py` files become Python judge entries, `.md` files become LLM prompt judge entries. The registry builds a flat `{name: entry}` map. The existing `JudgeConfig` dataclass gets two new fields: `builtin` (resolves to a registered judge name) and `arguments` (optional dict). The `load_judges()` function in `score.py` gains a new routing branch for `builtin` that resolves the judge via the registry and creates the appropriate scorer (direct callable for Python, template-render-then-LLM for prompts).
 
-Four initial judges ship: `no_harmful_content` (Python, scans output for harmful content), `tool_call_validation` (Python, checks tool calls completed without errors), `cost_budget` (Python, verifies cost against configurable threshold), and `output_completeness` (LLM, evaluates output completeness via Jinja2 prompt template).
+Four initial judges ship: `no_harmful_content` (LLM, evaluates output for harmful content via nuanced LLM analysis), `tool_call_validation` (Python, checks tool calls completed without errors), `cost_budget` (Python, verifies cost against configurable threshold), and `output_completeness` (LLM, evaluates output completeness via Jinja2 prompt template).
 
 ## When It Applies
 
@@ -35,18 +35,18 @@ Four initial judges ship: `no_harmful_content` (Python, scans output for harmful
 
 3. **Flat name resolution over qualified paths**: Judges are referenced by simple name (e.g., `builtin: no_harmful_content`) rather than category-qualified paths. The registry auto-discovers across all category directories and detects name collisions at startup.
 
-4. **Jinja2 for LLM prompt templates**: LLM judge files use Jinja2 templating with `config` and `outputs` as template variables. Provides conditionals, loops, and filters (especially `tojson`) for flexible prompt construction.
+4. **Jinja2 for all LLM judges**: All LLM judges (builtin and inline `prompt`/`prompt_file`) use Jinja2 templating with `arguments` and `outputs` as template variables. Provides conditionals, loops, and filters (especially `tojson`) for flexible prompt construction.
 
-5. **Optional config dict over environment variables**: Built-in judges accept an optional `config` parameter from eval.yaml rather than using environment variables. For Python judges, passed as the second function argument. For LLM judges, available as a Jinja template variable.
+5. **Optional arguments dict**: Built-in judges accept an optional `arguments` dict from eval.yaml. For Python judges, passed as `**kwargs`. For LLM judges, available as a Jinja template variable. For inline `check` judges, available as a local variable.
 
 6. **Lazy registry instantiation**: The registry is only created on first encounter of a `builtin` field, avoiding filesystem overhead for configs that don't use builtins.
 
-7. **Documentation-only versioning**: Each judge file defines a `__version__` string. No runtime pinning mechanism. Authors who need old behavior can vendor the judge file.
+7. **No versioning metadata**: Judge files do not carry version metadata. Authors who need old behavior can vendor the judge file.
 
 ## Areas Needing Attention
 
-- The `no_harmful_content` judge uses pattern-based detection without an LLM. Its effectiveness depends on the quality of the pattern list. The `output_completeness` LLM judge serves as the LLM-based evaluation pattern.
-- The `config` parameter changes the judge function signature from `(outputs)` to `(outputs, config=None)`. The implementation must only pass `config` for builtin judges, not existing external code judges.
+- The `no_harmful_content` judge is an LLM judge. Its effectiveness depends on the model's judgment capabilities. Context-sensitivity (legitimate security code vs actual malware) is handled via prompt instructions.
+- The `arguments` dict is passed as `**kwargs` to Python judges. Existing judges that don't accept `**kwargs` continue to work when `arguments` is empty.
 - The 4-tuple change to `load_judges()` return format touches the `score_cases()` function and potentially other callers. All call sites must be updated.
 - Jinja2 becomes a new dependency. Verify it's acceptable for the project's dependency policy.
 - LLM judge response parsing (extracting JSON from LLM output) needs robust error handling for malformed responses.
