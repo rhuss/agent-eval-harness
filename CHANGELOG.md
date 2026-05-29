@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.0.0...v1.1.0) (2026-05-29)
+
+
+### Features
+
+* add reusable judges library with builtin registry ([#66](https://github.com/opendatahub-io/agent-eval-harness/issues/66)) ([1e51b41](https://github.com/opendatahub-io/agent-eval-harness/commit/1e51b411392bda8fd3d404733f21ad2b62aaa55b))
+
 # 1.0.0 (2026-05-27)
 
 
