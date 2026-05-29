@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.1.0...v1.2.0) (2026-05-29)
+
+
+### Features
+
+* **eval-analyze:** update skills for builtin judges and add list_builtins script ([#79](https://github.com/opendatahub-io/agent-eval-harness/issues/79)) ([c2aff38](https://github.com/opendatahub-io/agent-eval-harness/commit/c2aff380716da6054ea406edb8678642ca70f0a3))
+
 # [1.1.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.0.0...v1.1.0) (2026-05-29)
 
 
