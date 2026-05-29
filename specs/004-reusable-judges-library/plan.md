@@ -46,7 +46,7 @@ specs/004-reusable-judges-library/
 
 ```text
 agent_eval/
-├── config.py                          # Extended: JudgeConfig + builtin/config fields
+├── config.py                          # Extended: JudgeConfig + builtin/arguments fields
 ├── judges/                            # NEW: Reusable judges package
 │   ├── __init__.py                    # BuiltinJudgeRegistry class
 │   ├── safety/

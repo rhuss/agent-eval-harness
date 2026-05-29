@@ -1,6 +1,6 @@
 """Validates that tool calls completed successfully without errors.
 
-Required fields: tool_calls, events
+Required fields: tool_calls
 Failure means: One or more tool calls had error results or missing responses.
 """
 
