@@ -44,6 +44,7 @@ A developer runs `/eval-run` without specifying `--config`. The system scans for
 3. **Given** no eval configs exist, **When** the user runs `/eval-run` without `--config`, **Then** the system reports no config found and suggests running `/eval-analyze` first
 4. **Given** the user provides `--config path/to/eval.yaml`, **When** the user runs `/eval-run`, **Then** the system uses that explicit path and skips auto-discovery
 5. **Given** configs exist in both root-level and `eval/` locations, **When** the system discovers configs, **Then** it includes all of them in the selection list
+6. **Given** a single root-level `eval.yaml` exists, **When** the user runs any eval command without `--config`, **Then** the system uses it directly without any warnings
 
 ---
 
@@ -61,7 +62,6 @@ A developer has an existing project with `eval.yaml` at the project root. They a
 2. **Given** the user accepts reorganization, **When** the system migrates, **Then** it moves the existing config, its `eval.md`, and dataset files to `eval/<name>/`
 3. **Given** the user accepts reorganization, **When** the system migrates, **Then** it updates `dataset.path` within `eval.yaml` to reflect the new location
 4. **Given** the user declines reorganization, **When** they provide `--config` explicitly, **Then** the system places the new config at the specified path without moving anything
-5. **Given** a single root-level `eval.yaml` exists, **When** the user runs any eval command without `--config`, **Then** the system uses it directly without any warnings
 
 ---
 
@@ -121,6 +121,15 @@ A developer has two eval configs that share the same dataset (e.g., one evaluate
 
 ## Requirements *(mandatory)*
 
+### Error Handling
+
+- YAML files that fail parsing during discovery MUST be skipped with a warning to stderr
+- YAML files without a `skill` field MUST be skipped (not valid eval configs)
+- If `eval/.eval-layout` is corrupted or contains an unrecognized value, treat as absent (no layout persisted)
+- If reorganization target path already exists, abort with an error (don't overwrite)
+- If source files are missing during reorganization (e.g., no eval.md), warn but continue with what exists
+- If eval.yaml has no `skill` field during reorganization, abort (can't determine target path)
+
 ### Functional Requirements
 
 **Smart Scaffolding**
@@ -142,13 +151,13 @@ A developer has two eval configs that share the same dataset (e.g., one evaluate
 **Path Resolution**
 
 - **FR-011**: The `dataset.path` in `eval.yaml` MUST resolve relative to the eval.yaml file location, not the project root. Note: `outputs[].path` values are workspace-relative (resolved against the execution workspace by `workspace.py` and `collect.py`) and MUST NOT be changed by this requirement.
-- **FR-012**: Run results MUST be stored in `$AGENT_EVAL_RUNS_DIR/<eval-name>/`, where `AGENT_EVAL_RUNS_DIR` defaults to `eval/runs` and acts as a base path under which per-eval run directories are created. The eval name MUST be derived from the `skill` field inside the eval.yaml content. The eval name MUST be validated as a single path segment (no path separators, `..`, or control characters) before use in path construction.
+- **FR-012**: Run results MUST be stored in `$AGENT_EVAL_RUNS_DIR/<eval-name>/`, where `AGENT_EVAL_RUNS_DIR` defaults to `eval/runs` and acts as a base path under which per-eval run directories are created. The eval name MUST be derived from the `skill` field inside the eval.yaml content (the field is named `skill` for backward compatibility, but serves as the eval identifier for any target type). The eval name MUST be validated as a single path segment (no path separators, `..`, or control characters) before use in path construction.
 
 **Backward Compatibility**
 
 - **FR-013**: Root-level `eval.yaml` MUST remain a fully supported, first-class location for single-eval projects (no deprecation warnings)
 - **FR-014**: When a second eval config is needed, the system MUST offer to reorganize into an `eval/` layout, moving the existing root config
-- **FR-015**: Reorganization MUST move `eval.yaml`, `eval.md`, and dataset files to the new location
+- **FR-015**: Reorganization MUST move `eval.yaml`, `eval.md`, and dataset files to the new location. Run history is NOT moved (runs are stored under `$AGENT_EVAL_RUNS_DIR` which is independent of config location).
 - **FR-016**: Reorganization MUST update `dataset.path` within `eval.yaml` to reflect the new location
 - **FR-017**: The system MUST continue to operate with root-level `eval.yaml` if the user declines reorganization
 
