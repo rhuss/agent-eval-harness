@@ -88,7 +88,7 @@ Implement migration logic per [migration-api.md](contracts/migration-api.md). Ca
 
 **Files**: `.gitignore`
 
-Add `eval/*/runs/` pattern for the default nested convention.
+Add `eval/runs/` and `eval/.eval-convention` patterns.
 
 ## File Structure Map
 
@@ -114,7 +114,7 @@ Add `eval/*/runs/` pattern for the default nested convention.
 | `skills/eval-mlflow/scripts/log_results.py` | Modify | Per-skill runs dir |
 | `skills/eval-mlflow/scripts/attach_feedback.py` | Modify | Per-skill runs dir |
 | `skills/eval-setup/scripts/check_env.py` | Modify | Report per-skill run directories |
-| `.gitignore` | Modify | Add `eval/*/runs/`, `eval/.eval-convention` |
+| `.gitignore` | Modify | Add `eval/runs/`, `eval/.eval-convention` |
 | `tests/test_config.py` | Modify | Path resolution tests |
 | `tests/test_discovery.py` | Create | Discovery unit tests |
 | `tests/test_convention.py` | Create | Convention persistence tests |
