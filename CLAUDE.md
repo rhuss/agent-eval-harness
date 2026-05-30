@@ -153,6 +153,5 @@ eval-analyze, eval-dataset, eval-optimize, eval-review — authoring workflows
 Execution, result storage, regression detection, OCI export (MLflow tracking is optional)
 
 <!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
+For additional context about the current feature work, read `specs/005-eval-directory-layout/plan.md`
 <!-- SPECKIT END -->
