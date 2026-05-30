@@ -19,6 +19,10 @@ mlruns/
 
 .knowledge/
 docs/superpowers/
+
+# Brainstorm files (local-only design exploration)
+brainstorm/
+
 # Environment and secrets
 .env
 .env.*
