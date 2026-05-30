@@ -1,6 +1,6 @@
 # Feature Specification: Flexible Eval Directory Layout
 
-**Feature Branch**: `004-eval-directory-layout`
+**Feature Branch**: `005-eval-directory-layout`
 **Created**: 2026-05-28
 **Updated**: 2026-05-29
 **Status**: Draft
@@ -123,7 +123,7 @@ A skill author edits their eval config and sets `dataset.path: cases/`. The syst
 **Path Resolution**
 
 - **FR-011**: All relative paths in `eval.yaml` (dataset path, output paths) MUST resolve relative to the eval.yaml file location, not the project root
-- **FR-012**: Run results MUST be stored in `$AGENT_EVAL_RUNS_DIR/<skill-name>/`, where `AGENT_EVAL_RUNS_DIR` defaults to `eval/runs` and acts as a base path under which per-skill run directories are created. The skill name MUST be derived from the `skill` field inside the eval.yaml content.
+- **FR-012**: Run results MUST be stored in `$AGENT_EVAL_RUNS_DIR/<skill-name>/`, where `AGENT_EVAL_RUNS_DIR` defaults to `eval/runs` and acts as a base path under which per-skill run directories are created. The skill name MUST be derived from the `skill` field inside the eval.yaml content. The skill name MUST be validated as a single path segment (no path separators, `..`, or control characters) before use in path construction.
 
 **Backward Compatibility and Migration**
 
