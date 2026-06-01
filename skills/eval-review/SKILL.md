@@ -32,16 +32,16 @@ python3 ${CLAUDE_SKILL_DIR}/../../scripts/discover.py
 Read the scoring summary and per-case results:
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/agent_eval/state.py read $AGENT_EVAL_RUNS_DIR/<id>/summary.yaml
+python3 ${CLAUDE_SKILL_DIR}/scripts/agent_eval/state.py read $AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/summary.yaml
 ```
 
 Also read eval.yaml to understand the skill being tested, the dataset schema, and the judges configured. Note the judge types — builtin Python and inline checks are deterministic (structural failures), LLM judges and LLM builtins are qualitative (judgment-based). The `judge_type` field is available in results.
 
 ## Step 2: Present Overview
 
-If `$AGENT_EVAL_RUNS_DIR/<id>/analysis.md` exists, read it — it contains the automated analysis from `/eval-run` with recommendations, failure patterns, and root causes. Present its key recommendation to the user as context before starting the case walkthrough.
+If `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/analysis.md` exists, read it — it contains the automated analysis from `/eval-run` with recommendations, failure patterns, and root causes. Present its key recommendation to the user as context before starting the case walkthrough.
 
-If an HTML report exists at `$AGENT_EVAL_RUNS_DIR/<id>/report.html`, mention it. If the user just ran `/eval-run` (which opens the report automatically), they've likely already seen it — skip the overview and ask which cases they want to discuss.
+If an HTML report exists at `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/report.html`, mention it. If the user just ran `/eval-run` (which opens the report automatically), they've likely already seen it — skip the overview and ask which cases they want to discuss.
 
 Show a high-level summary:
 - Overall pass rates per judge
@@ -56,7 +56,7 @@ For each case the user wants to review, present:
 
 1. **Judge scores** — which judges passed/failed, with rationale. Note the judge type (builtin/check/llm/code) for context.
 2. **Pairwise results** — if a baseline comparison was run, show which version won for this case and the comparison rationale.
-3. **Output summary** — read the key output files from `$AGENT_EVAL_RUNS_DIR/<id>/cases/<case>/` and summarize what the skill produced. Don't dump full file contents — describe what's there and let the user ask to see specifics.
+3. **Output summary** — read the key output files from `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/cases/<case>/` and summarize what the skill produced. Don't dump full file contents — describe what's there and let the user ask to see specifics.
 4. **Ask for feedback** — "How does this look? Anything the judges missed?"
 
 Collect the user's feedback for each case. Keep notes on what they flagged — these are the signals that judges can't capture.
@@ -67,7 +67,7 @@ If the user says "looks fine" or gives no feedback, move on. Empty feedback mean
 
 If execution transcripts exist, delegate analysis to an Agent — transcripts can be very large and should not be loaded into your context directly.
 
-Check `run_result.json` for `execution_mode`. In `case` mode, each case has its own transcript at `$AGENT_EVAL_RUNS_DIR/<id>/cases/<case>/stdout.log`. In `batch` mode, there's one at `$AGENT_EVAL_RUNS_DIR/<id>/stdout.log`. Analyze the transcript(s) for the cases the user reviewed.
+Check `run_result.json` for `execution_mode`. In `case` mode, each case has its own transcript at `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/cases/<case>/stdout.log`. In `batch` mode, there's one at `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/stdout.log`. Analyze the transcript(s) for the cases the user reviewed.
 
 Spawn an Agent to read the relevant stdout.log and report:
 - Did the skill try multiple approaches before succeeding? (instructions may be unclear)
@@ -82,7 +82,7 @@ Report relevant transcript findings to the user alongside their case feedback �
 
 Persist the collected feedback so it survives beyond this conversation and can be used by `/eval-optimize` and `/eval-mlflow`.
 
-Write `$AGENT_EVAL_RUNS_DIR/<id>/review.yaml` with this structure:
+Write `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/review.yaml` with this structure:
 
 ```yaml
 run_id: "<id>"

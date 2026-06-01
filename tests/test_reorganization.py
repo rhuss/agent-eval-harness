@@ -102,12 +102,13 @@ def test_reorganize_preserves_absolute_dataset_path(tmp_path):
     assert new_config["dataset"]["path"] == "/shared/datasets/cases"
 
 
-def test_reorganize_nonexistent_dataset_preserves_path(tmp_path):
-    """When dataset dir doesn't exist, path is not rewritten."""
+def test_reorganize_nonexistent_dataset_rewrites_path(tmp_path):
+    """When dataset dir doesn't exist, path is still rewritten to stay valid."""
     config = {"skill": "my-skill", "dataset": {"path": "cases/"}}
     (tmp_path / "eval.yaml").write_text(yaml.safe_dump(config))
     (tmp_path / "eval.md").write_text("# Analysis\n")
     result = reorganize_root_config(tmp_path, "my-skill")
     with open(result.target_config) as f:
         new_config = yaml.safe_load(f)
-    assert new_config["dataset"]["path"] == "cases/"
+    resolved = (result.target_config.parent / new_config["dataset"]["path"]).resolve()
+    assert resolved == (tmp_path / "cases").resolve()
