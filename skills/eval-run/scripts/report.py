@@ -2238,6 +2238,15 @@ def main():
     args = parser.parse_args()
 
     config = _load_yaml(Path(args.config))
+    config_dir = Path(args.config).resolve().parent
+
+    # Resolve dataset.path relative to config file location so downstream
+    # functions get an absolute path (not CWD-relative).
+    ds = config.get("dataset", {}) if config else {}
+    ds_path = ds.get("path", "")
+    if ds_path and not Path(ds_path).is_absolute():
+        ds["path"] = str((config_dir / ds_path).resolve())
+
     eval_name = config.get("skill", "") if config else ""
     if eval_name and ("/" in eval_name or "\\" in eval_name
                       or eval_name in (".", "..") or "\x00" in eval_name):
