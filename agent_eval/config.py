@@ -436,9 +436,9 @@ class EvalConfig:
         return Path.cwd()
 
 
-def _is_valid_eval_name(name: str) -> bool:
+def _is_valid_eval_name(name: object) -> bool:
     """Check that an eval name is a valid single path segment."""
-    if not name:
+    if not isinstance(name, str) or not name:
         return False
     if "/" in name or "\\" in name or name in (".", "..") or "\x00" in name:
         return False

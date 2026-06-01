@@ -4,7 +4,6 @@ Verifies that _get_runs_dir() appends the eval name to the base
 runs directory, producing $AGENT_EVAL_RUNS_DIR/<eval-name>/.
 """
 
-import os
 import sys
 from pathlib import Path
 
