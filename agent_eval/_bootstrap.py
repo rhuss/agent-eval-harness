@@ -16,6 +16,10 @@ def _activate():
     plugin_root = os.path.dirname(pkg_dir)
     venv_dir = os.path.join(plugin_root, '.eval-venv')
     venv_python = os.path.join(venv_dir, 'bin', 'python3')
+    if not os.path.isfile(venv_python):
+        # uv venvs may use versioned name (e.g., python3.14)
+        v = sys.version_info
+        venv_python = os.path.join(venv_dir, 'bin', f'python{v.major}.{v.minor}')
 
     if not os.path.isfile(venv_python):
         return

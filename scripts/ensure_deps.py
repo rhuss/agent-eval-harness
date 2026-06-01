@@ -77,12 +77,14 @@ def _resolve_deps(plugin_root):
                 continue
             if j.get("prompt") or j.get("prompt_file") or j.get("pairwise"):
                 deps.append(("anthropic[vertex]>=0.40", "anthropic"))
+                deps.append(("jinja2>=3.0", "jinja2"))
                 break
     elif isinstance(judges, dict):
         # _parse_yaml_minimal can't parse YAML lists, so judges may be
-        # a dict or empty. Install anthropic as a safe default since we
-        # can't tell whether LLM judges are configured.
+        # a dict or empty. Install anthropic+jinja2 as a safe default
+        # since we can't tell whether LLM judges are configured.
         deps.append(("anthropic[vertex]>=0.40", "anthropic"))
+        deps.append(("jinja2>=3.0", "jinja2"))
 
     return deps
 
@@ -105,9 +107,18 @@ def _parse_yaml_minimal(text):
     return result
 
 
+def _find_venv_python(venv_dir):
+    """Find the python binary in a venv (handles uv naming variations)."""
+    for name in ("python3", "python", f"python{sys.version_info.major}.{sys.version_info.minor}"):
+        candidate = venv_dir / "bin" / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _ensure_venv(venv_dir):
     """Create the venv if it doesn't exist."""
-    if (venv_dir / "bin" / "python3").exists():
+    if _find_venv_python(venv_dir):
         return
 
     uv = shutil.which("uv")
@@ -116,6 +127,9 @@ def _ensure_venv(venv_dir):
         subprocess.run([uv, "venv", str(venv_dir), "--seed",
                         "--python", sys.executable],
                        check=True, capture_output=True, text=True)
+        venv_py = _find_venv_python(venv_dir)
+        if venv_py and venv_py.name != "python3":
+            (venv_dir / "bin" / "python3").symlink_to(venv_py.name)
     else:
         print(f"Creating venv: {venv_dir}")
         subprocess.run([sys.executable, "-m", "venv", str(venv_dir)],
