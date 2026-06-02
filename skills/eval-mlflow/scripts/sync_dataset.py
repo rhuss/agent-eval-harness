@@ -52,7 +52,7 @@ from agent_eval.mlflow.experiment import resolve_tracking_uri
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--config", default="eval.yaml")
+    parser.add_argument("--config", required=True)
     parser.add_argument("--mapping", required=True,
                         help="Path to schema_mapping.json (produced by the agent)")
     parser.add_argument("--dataset-name", default=None,
@@ -79,7 +79,7 @@ def main():
         sys.exit(1)
 
     # Find case directories
-    cases_dir = Path(config.dataset_path)
+    cases_dir = config.resolve_path(config.dataset_path)
     if not cases_dir.exists():
         print(f"ERROR: dataset path not found: {cases_dir}", file=sys.stderr)
         sys.exit(1)

@@ -15,7 +15,7 @@ Parse `$ARGUMENTS`:
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `--config <path>` | no | `eval.yaml` | Path to eval config |
+| `--config <path>` | no | auto-discover | Path to eval config |
 | `--model <model>` | no | `models.skill` from config | Skill model. Required if `models.skill` is unset in eval.yaml. |
 | `--subagent-model <model>` | no | `models.subagent` → falls back to skill model | Model for subagents (e.g., `claude-sonnet-4-6` while main is `claude-opus-4-7`) |
 | `--skill <name>` | no | from config | Override the skill to test |
@@ -26,7 +26,23 @@ Parse `$ARGUMENTS`:
 | `--gold` | no | false | Save outputs as gold references after run |
 | `--effort <level>` | no | `runner.effort` from config | Claude Code reasoning effort (Claude Code only; ignored by other runners) |
 
-Check if the config file exists (use the parsed config path, not hardcoded `eval.yaml`):
+### Config Discovery
+
+If `--config` was explicitly provided, use that path directly.
+
+Otherwise, auto-discover eval configs:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/../../scripts/discover.py
+```
+
+- **1 config found**: auto-select it as `<config>`
+- **Multiple configs found**: present the list and ask the user which to run
+- **No configs found**: proceed to the bootstrap flow below
+
+After selecting a config, read its `skill` field to set `<eval-name>` (used in `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>` paths below).
+
+Check if the resolved config file exists:
 
 ```bash
 test -f <config> && echo "CONFIG_EXISTS" || echo "NO_CONFIG"
@@ -76,7 +92,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/preflight.py \
   [--run-id <id>]
 ```
 
-The script checks `tmp/` state files and whether `$AGENT_EVAL_RUNS_DIR/<id>` already has results from a previous run.
+The script checks `tmp/` state files and whether `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>` already has results from a previous run.
 
 - **If `CLEAN`**: proceed to workspace setup.
 - **If `DIRTY`**: report the findings to the user and ask what to do:
@@ -124,7 +140,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/execute.py \
   --skill <skill_name> \
   --skill-args "<skill arguments>" \
   --model <model> \
-  --output $AGENT_EVAL_RUNS_DIR/<id> \
+  --output $AGENT_EVAL_RUNS_DIR/<eval-name>/<id> \
   [--agent <runner>] \
   [--subagent-model <model>] \
   [--mlflow-experiment <name>] \
@@ -166,10 +182,10 @@ When you spot an issue, report it to the user with the relevant output lines rat
 After execution, check `run_result.json` for `exit_code`, `duration_s`, `wall_clock_s`, `cost_usd`, `num_turns`, and per-model token usage. `duration_s` is the sum of per-case durations; `wall_clock_s` is the actual elapsed time (lower when parallelism is used). Read it with `cat` (JSON — do not use `state.py`).
 
 ```bash
-cat $AGENT_EVAL_RUNS_DIR/<id>/run_result.json
+cat $AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/run_result.json
 ```
 
-If `exit_code` is non-zero, report the failure with the exit code, duration, and the first few lines of `$AGENT_EVAL_RUNS_DIR/<id>/stderr.log`. Do not continue to scoring.
+If `exit_code` is non-zero, report the failure with the exit code, duration, and the first few lines of `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/stderr.log`. Do not continue to scoring.
 
 ## Step 5: Collect Artifacts
 
@@ -179,13 +195,13 @@ Distribute workspace outputs into per-case directories so judges can score each 
 python3 ${CLAUDE_SKILL_DIR}/scripts/collect.py \
   --config <config> \
   --workspace <workspace_path> \
-  --output $AGENT_EVAL_RUNS_DIR/<id>
+  --output $AGENT_EVAL_RUNS_DIR/<eval-name>/<id>
 ```
 
 Read the collection summary (JSON file — read it with `cat` or `jq`, not `state.py`):
 
 ```bash
-cat $AGENT_EVAL_RUNS_DIR/<id>/collection.json
+cat $AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/collection.json
 ```
 
 Report per-case counts. If any case has 0 artifacts, warn — the skill may not have produced output for that case.
@@ -223,7 +239,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/score.py pairwise \
 Read the full results:
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/agent_eval/state.py read $AGENT_EVAL_RUNS_DIR/<id>/summary.yaml
+python3 ${CLAUDE_SKILL_DIR}/scripts/agent_eval/state.py read $AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/summary.yaml
 ```
 
 `summary.yaml` has three sections: `judges` (per-judge `mean` and `pass_rate`), `per_case` (per-case `{value, rationale}` per judge), and `pairwise` (only if `--baseline` was used: `run_a`, `run_b`, `wins_a`, `wins_b`, `ties`).
@@ -237,7 +253,7 @@ When analyzing failures, note the judge type — builtin judges have fixed, vers
 **Save analysis to file** so it persists in the report. Prepend YAML frontmatter recording the agent and model that wrote the analysis, plus the UTC timestamp — the report uses these to attribute the analysis in its subtitle:
 
 ```bash
-cat > $AGENT_EVAL_RUNS_DIR/<id>/analysis.md << 'EOF'
+cat > $AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/analysis.md << 'EOF'
 ---
 agent: Claude Code        # the agent/runtime writing this analysis (e.g. Claude Code)
 model: <your-model-id>   # e.g. claude-opus-4-7, claude-sonnet-4-6 — the model backing the agent
@@ -260,7 +276,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/report.py \
   --open
 ```
 
-Tell the user the report is at `$AGENT_EVAL_RUNS_DIR/<id>/report.html`.
+Tell the user the report is at `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/report.html`.
 
 **If `--gold` flag**: After scoring, copy collected artifacts to dataset case dirs as reference files. Report which cases were saved.
 

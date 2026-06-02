@@ -1,3 +1,18 @@
+<!-- Sync Impact Report
+Version change: 1.0.0 → 1.1.0 → 1.1.1 (PATCH: refined VII and VIII per reviewer feedback)
+Modified principles: none renamed
+Added sections:
+  - VII. Backward Compatibility by Default
+  - VIII. Infer State, Don't Persist It
+  - Generalized language from "skills" to "eval targets" throughout
+Removed sections: none
+Templates requiring updates:
+  - .specify/templates/plan-template.md: ✅ no constitution references
+  - .specify/templates/spec-template.md: ✅ no constitution references
+  - .specify/templates/tasks-template.md: ✅ no constitution references
+Follow-up TODOs: none
+-->
+
 # Agent Eval Harness Constitution
 
 ## Core Principles
@@ -20,6 +35,12 @@ New features extend existing dataclasses and functions rather than replacing the
 ### VI. MLflow as Optional Integration
 MLflow handles dataset sync, result logging, and trace feedback via a separate skill (`/eval-mlflow`). The core eval pipeline (analyze, dataset, run, review, optimize) works without MLflow. No implicit experiment creation on shared tracking servers.
 
+### VII. Backward Compatibility by Default
+Existing configurations must keep working when new features are added. Root-level `eval.yaml` remains a first-class location for single-eval projects with no deprecation warnings. New organizational features (directory layouts, discovery) adapt to project complexity. When migration is needed, the harness should automate it (offer to reorganize, move files, update paths) rather than leaving manual steps to the user.
+
+### VIII. Infer State, Don't Persist It
+Prefer inferring system state from existing file structure over creating persistence files. Discovery patterns, layout detection, and convention resolution should derive from what's on disk rather than maintaining separate metadata files. This eliminates artifacts to manage, gitignore entries, and error handling for corrupted state. Exception: persist computed state when it is expensive to recompute (e.g., `eval.md` from skill deep analysis).
+
 ## Technology Stack
 
 - **Language**: Python 3.11+
@@ -38,4 +59,4 @@ MLflow handles dataset sync, result logging, and trace feedback via a separate s
 
 Constitution supersedes default practices. Amendments require documentation and review.
 
-**Version**: 1.0.0 | **Ratified**: 2026-05-29
+**Version**: 1.1.1 | **Ratified**: 2026-05-29 | **Last Amended**: 2026-05-31

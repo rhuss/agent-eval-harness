@@ -13,11 +13,25 @@ The key difference from `/eval-review`: you act autonomously. You read judge rat
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `--config <path>` | no | `eval.yaml` | Path to eval config |
+| `--config <path>` | no | auto-discover | Path to eval config |
 | `--model <model>` | no | `models.skill` from eval.yaml | Model to use for eval runs (overrides config default) |
 | `--max-iterations <N>` | no | 3 | Stop after N improvement cycles |
 | `--run-id <id>` | no | auto-generated | Base run ID (iterations append `-iter-N`) |
 | `--target-judge <name>` | no | all judges | Focus on a specific failing judge |
+
+### Config Discovery
+
+If `--config` was explicitly provided, use that path directly. Otherwise, auto-discover:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/../../scripts/discover.py
+```
+
+- **1 config found**: auto-select it as `<config>`
+- **Multiple configs found**: present the list and ask the user which eval to optimize
+- **No configs found**: suggest running `/eval-analyze` first
+
+After selecting a config, read its `skill` field to set `<eval-name>` (used in `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>` paths below).
 
 ```bash
 mkdir -p tmp
@@ -40,7 +54,7 @@ If results already exist (the user just ran `/eval-run`), skip this and use the 
 Read the results:
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/agent_eval/state.py read $AGENT_EVAL_RUNS_DIR/<id>-iter-0/summary.yaml
+python3 ${CLAUDE_SKILL_DIR}/scripts/agent_eval/state.py read $AGENT_EVAL_RUNS_DIR/<eval-name>/<id>-iter-0/summary.yaml
 ```
 
 If all judges pass, report success and exit — nothing to improve.
@@ -56,7 +70,7 @@ From `summary.yaml`, identify:
 Also check for human feedback — these catch things judges miss:
 
 ```bash
-test -f $AGENT_EVAL_RUNS_DIR/<id>/review.yaml && echo "REVIEW_EXISTS" || echo "NO_REVIEW"
+test -f $AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/review.yaml && echo "REVIEW_EXISTS" || echo "NO_REVIEW"
 ```
 
 If `review.yaml` exists, read its `feedback` section (human feedback from `/eval-review`) and `mlflow_feedback` section (annotations pulled from MLflow UI). Human feedback is higher-signal than judge rationale — prioritize issues the user flagged.
@@ -84,7 +98,7 @@ For each failure pattern, investigate why the skill produces bad output:
    python3 ${CLAUDE_SKILL_DIR}/../eval-analyze/scripts/find_skills.py --name <skill>
    ```
 
-2. **Read transcripts** (if available) — transcripts can be very large, so delegate to an Agent. Check `run_result.json` for `execution_mode`: in `case` mode, each case has its own transcript at `$AGENT_EVAL_RUNS_DIR/<id>/cases/<case>/stdout.log`; in `batch` mode, there's one at `$AGENT_EVAL_RUNS_DIR/<id>/stdout.log`. Focus on the failing cases.
+2. **Read transcripts** (if available) — transcripts can be very large, so delegate to an Agent. Check `run_result.json` for `execution_mode`: in `case` mode, each case has its own transcript at `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/cases/<case>/stdout.log`; in `batch` mode, there's one at `$AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/stdout.log`. Focus on the failing cases.
 
    Include the specific judge failure in the prompt so the agent traces the causal chain rather than producing a generic summary:
    ```text
@@ -103,7 +117,7 @@ For each failure pattern, investigate why the skill produces bad output:
 
 3. **Read failing case outputs** — use an Explore agent to examine the actual output files. Include what the judge expected so the comparison is targeted:
    ```text
-   Agent tool, subagent_type="Explore": "Read the outputs in $AGENT_EVAL_RUNS_DIR/<id>/cases/<failing_case>/.
+   Agent tool, subagent_type="Explore": "Read the outputs in $AGENT_EVAL_RUNS_DIR/<eval-name>/<id>/cases/<failing_case>/.
    The judge '<judge_name>' failed with: '<rationale>'.
    Compare the actual output against this expectation — what specifically is missing or wrong?"
    ```
@@ -140,7 +154,7 @@ Use the Skill tool to invoke /eval-run --run-id <id>-iter-<N> --baseline <id>-it
 Read the new results:
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/agent_eval/state.py read $AGENT_EVAL_RUNS_DIR/<id>-iter-<N>/summary.yaml
+python3 ${CLAUDE_SKILL_DIR}/scripts/agent_eval/state.py read $AGENT_EVAL_RUNS_DIR/<eval-name>/<id>-iter-<N>/summary.yaml
 ```
 
 Check:

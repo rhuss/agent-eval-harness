@@ -32,7 +32,7 @@ from agent_eval.config import EvalConfig
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--config", default="eval.yaml")
+    parser.add_argument("--config", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--cases", nargs="*", default=None)
     parser.add_argument("--symlinks", default=None,
@@ -42,7 +42,7 @@ def main():
 
     config = EvalConfig.from_yaml(args.config)
 
-    cases_dir = Path(config.dataset_path)
+    cases_dir = config.resolve_path(config.dataset_path)
     if not cases_dir.exists():
         print(f"ERROR: dataset path not found: {cases_dir}", file=sys.stderr)
         sys.exit(1)
@@ -196,12 +196,17 @@ def _create_per_case_workspace(workspace, case_dirs, config, args):
         case_ws.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "init", "-q", str(case_ws)], check=True)
 
-        # Copy only the input file from the dataset case directory.
-        # Everything else (gold standards, reference docs, annotations)
-        # is evaluation material that the skill must not see.
+        # Copy only the input file and answers.yaml into the workspace.
+        # Companion files (e.g., source code for autofix skills) should
+        # use dataset.input_files_dir (see #70) to explicitly declare
+        # which files the skill needs. Everything else (gold standards,
+        # reference docs, annotations) is evaluation material.
         input_src = _find_input_file(case_dir)
         if input_src:
             shutil.copy2(input_src, case_ws / input_src.name)
+        answers_src = case_dir / "answers.yaml"
+        if answers_src.is_file():
+            shutil.copy2(answers_src, case_ws / "answers.yaml")
 
         # Create output directories
         for output in config.outputs:

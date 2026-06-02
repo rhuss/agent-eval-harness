@@ -2246,22 +2246,39 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--config", default="eval.yaml")
+    parser.add_argument("--config", required=True)
     parser.add_argument("--baseline", default=None,
                         help="Baseline run ID for comparison")
     parser.add_argument("--open", action="store_true",
                         help="Open report in browser")
     args = parser.parse_args()
 
-    runs_dir = Path(os.environ.get("AGENT_EVAL_RUNS_DIR", "eval/runs"))
+    config = _load_yaml(Path(args.config))
+    config_dir = Path(args.config).resolve().parent
+
+    # Resolve dataset.path relative to config file location so downstream
+    # functions get an absolute path (not CWD-relative).
+    ds = config.get("dataset") if config else None
+    if isinstance(ds, dict):
+        ds_path = ds.get("path", "")
+        if ds_path and not Path(ds_path).is_absolute():
+            ds["path"] = str((config_dir / ds_path).resolve())
+
+    eval_name = config.get("skill", "") if config else ""
+    if eval_name and (not isinstance(eval_name, str)
+                      or "/" in eval_name or "\\" in eval_name
+                      or eval_name in (".", "..")
+                      or any(ord(c) < 32 for c in eval_name)):
+        print(f"ERROR: invalid skill name: {eval_name!r}", file=sys.stderr)
+        sys.exit(1)
+    runs_base = Path(os.environ.get("AGENT_EVAL_RUNS_DIR", "eval/runs"))
+    runs_dir = runs_base / eval_name if eval_name else runs_base
     run_dir = runs_dir / args.run_id
     baseline_dir = runs_dir / args.baseline if args.baseline else None
 
     if not run_dir.exists():
         print(f"ERROR: run directory not found: {run_dir}", file=sys.stderr)
         sys.exit(1)
-
-    config = _load_yaml(Path(args.config))
     summary = _load_yaml(run_dir / "summary.yaml")
     run_result = _load_json(run_dir / "run_result.json")
     review = _load_yaml(run_dir / "review.yaml") or None
