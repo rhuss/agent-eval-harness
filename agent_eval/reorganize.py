@@ -47,7 +47,7 @@ def reorganize_root_config(project_root: Path, eval_name: str) -> Reorganization
     if not isinstance(raw, dict):
         raise ValueError(f"Invalid eval config (not a YAML mapping): {source_config}")
 
-    old_dataset_path = raw.get("dataset", {}).get("path", "")
+    old_dataset_path = (raw.get("dataset") or {}).get("path", "")
 
     if old_dataset_path and not Path(old_dataset_path).is_absolute():
         old_abs = (project_root / old_dataset_path).resolve()

@@ -30,5 +30,6 @@ Moves a root-level `eval.yaml` and its companion artifacts into the nested layou
 ### Error Handling
 
 - If target path already exists: abort with error (don't overwrite)
-- If source files are missing (e.g., no eval.md): warn but continue with what exists
+- If root `eval.yaml` is missing: abort with error (nothing to reorganize)
+- If optional companion files are missing (e.g., no eval.md): warn but continue with what exists
 - If eval.yaml has no `skill` field: abort (can't determine target path)

@@ -148,7 +148,8 @@ def find_skill(name):
                     fm_name = (fm or {}).get("name", "")
                     if fm_name == name or fm_name in candidates:
                         return Path(path)
-            except Exception:
+            except Exception as e:
+                print(f"  WARNING: failed to parse {path}: {e}", file=sys.stderr)
                 continue
     return None
 
