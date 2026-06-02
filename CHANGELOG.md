@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.4.1...v1.5.0) (2026-06-02)
+
+
+### Features
+
+* Flexible Eval Directory Layout [Spec + Impl] ([#85](https://github.com/opendatahub-io/agent-eval-harness/issues/85)) ([c978627](https://github.com/opendatahub-io/agent-eval-harness/commit/c9786277f6e3053a6359c4776f473042b91963f8)), closes [#86](https://github.com/opendatahub-io/agent-eval-harness/issues/86) [#77](https://github.com/opendatahub-io/agent-eval-harness/issues/77) [#70](https://github.com/opendatahub-io/agent-eval-harness/issues/70) [#70](https://github.com/opendatahub-io/agent-eval-harness/issues/70)
+
 ## [1.4.1](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.4.0...v1.4.1) (2026-06-02)
 
 
