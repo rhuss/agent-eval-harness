@@ -1070,7 +1070,7 @@ def cmd_judges(args):
     config = EvalConfig.from_yaml(args.config)
     runs_dir = _get_runs_dir(config.skill)
     case_dirs = _get_case_dirs(args.run_id, runs_dir)
-    project_root = config.config_dir or Path.cwd()
+    project_root = Path.cwd()
 
     judges = load_judges(config, project_root)
     print(f"Scoring {len(case_dirs)} cases with {len(judges)} judges: "
