@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.7.2...v1.8.0) (2026-06-04)
+
+
+### Features
+
+* change runner.env from list to dict with $VAR resolution ([#108](https://github.com/opendatahub-io/agent-eval-harness/issues/108)) ([b1abc0b](https://github.com/opendatahub-io/agent-eval-harness/commit/b1abc0b83c614ec94406f82b799ea61c57eeec14))
+
 ## [1.7.2](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.7.1...v1.7.2) (2026-06-04)
 
 
