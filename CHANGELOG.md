@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.6.0...v1.7.0) (2026-06-04)
+
+
+### Features
+
+* replace runner.env_strip with runner.env for additive env forwarding ([#105](https://github.com/opendatahub-io/agent-eval-harness/issues/105)) ([b052fe1](https://github.com/opendatahub-io/agent-eval-harness/commit/b052fe1c9f5ea5bbeb954cf23b6aa66979b512f4)), closes [#103](https://github.com/opendatahub-io/agent-eval-harness/issues/103)
+
 # [1.6.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.5.0...v1.6.0) (2026-06-03)
 
 
