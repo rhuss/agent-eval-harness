@@ -1,3 +1,15 @@
+# [1.10.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.9.1...v1.10.0) (2026-06-05)
+
+
+### Bug Fixes
+
+* pairwise comparison sends full artifacts and captures judge reasoning ([288bd3b](https://github.com/opendatahub-io/agent-eval-harness/commit/288bd3be7701a7f09eb0444abb20ab6b9a3ef163))
+
+
+### Features
+
+* show pairwise verdict and reasoning per case in the report ([f28b689](https://github.com/opendatahub-io/agent-eval-harness/commit/f28b689c1c68a183b94e67a96df4440b0984cc47))
+
 ## [1.9.1](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.9.0...v1.9.1) (2026-06-05)
 
 
