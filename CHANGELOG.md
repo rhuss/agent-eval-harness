@@ -1,3 +1,11 @@
+## [1.13.2](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.13.1...v1.13.2) (2026-06-09)
+
+
+### Bug Fixes
+
+* **trace_builder:** return server trace ID from _log_trace to fix FK failures ([db004f0](https://github.com/opendatahub-io/agent-eval-harness/commit/db004f0c763aa5949e8f52dae3d5634fd2a4409b)), closes [#95](https://github.com/opendatahub-io/agent-eval-harness/issues/95)
+* warn when _log_trace returns no backend ID ([e877d96](https://github.com/opendatahub-io/agent-eval-harness/commit/e877d9625a3f36e0b119b0b3375a0d7734a239a7))
+
 ## [1.13.1](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.13.0...v1.13.1) (2026-06-09)
 
 
