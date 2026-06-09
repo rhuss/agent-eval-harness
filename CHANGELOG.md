@@ -1,3 +1,12 @@
+## [1.13.1](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.13.0...v1.13.1) (2026-06-09)
+
+
+### Bug Fixes
+
+* don't sample deterministic judges even with CLI --samples ([cbef112](https://github.com/opendatahub-io/agent-eval-harness/commit/cbef112080e449f0786a90a4f29a1d24341a9f98))
+* let --samples 1 override per-judge config ([0346683](https://github.com/opendatahub-io/agent-eval-harness/commit/03466835a8b5cc1aad00ddae0ac762c412a84f03))
+* preserve numbered list continuity across blank lines in rationales ([17baf24](https://github.com/opendatahub-io/agent-eval-harness/commit/17baf24374336795769b58a2efa707521fc77951))
+
 # [1.13.0](https://github.com/opendatahub-io/agent-eval-harness/compare/v1.12.0...v1.13.0) (2026-06-09)
 
 
